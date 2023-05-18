@@ -1,0 +1,14 @@
+version: v1
+plugins:
+  - name: go
+    out: .
+    opt: paths=source_relative
+  # go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28
+  # go install istio.io/tools/cmd/protoc-gen-golang-deepcopy
+  - name: golang-deepcopy
+    out: .
+    opt: paths=source_relative
+  # go install istio.io/tools/cmd/protoc-gen-golang-jsonshim
+  - name: golang-jsonshim
+    out: .
+    opt: paths=source_relative

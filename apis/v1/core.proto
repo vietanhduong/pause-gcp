@@ -1,0 +1,43 @@
+syntax = "proto3";
+package v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/vietanhduong/pause-gke-cluster/apis/v1";
+
+message Schedule {
+  string project = 1;
+  google.protobuf.Timestamp stop_at = 2;
+  google.protobuf.Timestamp start_at = 3;
+  Repeat repeat = 4;
+  repeated ExpectCluster expect_clusters = 5;
+}
+
+message ExpectCluster {
+  string name = 1;
+  repeated string pools = 2;
+  string zone = 3;
+  string region = 4;
+}
+
+message Repeat {
+  enum Day {
+    SUNDAY = 0;
+    MONDAY = 1;
+    TUESDAY = 2;
+    WEDNESDAY = 3;
+    THURSDAY = 4;
+    FRIDAY = 5;
+    SATURDAY = 6;
+  }
+  message Other {
+    repeated Day days = 1;
+  }
+
+  oneof specifier {
+    bool every_day = 1;
+    bool week_days = 2;
+    bool weekends = 3;
+    Other other = 4;
+  }
+}
