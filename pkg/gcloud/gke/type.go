@@ -25,16 +25,3 @@ type Autoscaling struct {
 	TotalMinNodeCount int32  `json:"totalMinNodeCount,omitempty"`
 	TotalMaxNodeCount int32  `json:"totalMaxNodeCount,omitempty"`
 }
-
-type PauseClusterRequest struct {
-	Project         string
-	Location        string
-	ClusterName     string
-	ExceptNodePools []string
-}
-
-type UnpauseClusterRequest struct {
-	Project     string
-	Location    string
-	ClusterName string
-}

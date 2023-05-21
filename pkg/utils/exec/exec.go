@@ -3,7 +3,7 @@ package exec
 import (
 	"bytes"
 	"fmt"
-	"github.com/vietanhduong/pause-gke-cluster/pkg/env"
+	"github.com/vietanhduong/pause-gcp/pkg/utils/env"
 	"os"
 	"os/exec"
 	"runtime"

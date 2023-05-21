@@ -1,61 +1,49 @@
 package gke
 
 import (
-	container "cloud.google.com/go/container/apiv1"
 	"cloud.google.com/go/container/apiv1/containerpb"
 	"fmt"
-	"github.com/googleapis/gax-go/v2/apierror"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
-	"github.com/vietanhduong/pause-gke-cluster/pkg/exec"
-	"github.com/vietanhduong/pause-gke-cluster/pkg/gcloud/options"
+	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
+	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
+	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/option"
-	"google.golang.org/grpc/codes"
 	"log"
-	"os"
-	"path"
 	"strconv"
+	"strings"
 	"time"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-const (
-	DefaultBackupStateSuffix = ".backup_state.json"
-)
+type Client struct{}
 
-type Client struct {
-	Opts options.Options
-}
-
-func NewClient(opt ...options.Option) *Client {
+func NewClient() *Client {
 	client := &Client{}
-	client.Opts.BackupStatePath = "."
-	for _, o := range opt {
-		o(&client.Opts)
-	}
 	return client
 }
 
 func (c *Client) ListClusters(project string) ([]*Cluster, error) {
-	conn, err := c.newClusterClient()
+	raw, err := exec.Run(exec.Command("gcloud", "container", "clusters", "list", "--project", project, "--format", "json"))
 	if err != nil {
-		return nil, errors.Wrapf(err, "list clusters: new client")
-	}
-	defer conn.Close()
-
-	resp, err := conn.ListClusters(context.TODO(), &containerpb.ListClustersRequest{
-		Parent: fmt.Sprintf("projects/%s/locations/-", project),
-	})
-
-	if err != nil {
-		return nil, errors.Wrapf(err, "list clusters: make request")
+		return nil, errors.Wrapf(err, "list clusters")
 	}
 
-	out := make([]*Cluster, len(resp.GetClusters()))
-	for i, e := range resp.GetClusters() {
+	var tmp []any
+	_ = json.UnmarshalFromString(raw, &tmp)
+
+	clusters := make([]*containerpb.Cluster, len(tmp))
+
+	for i, e := range tmp {
+		b, _ := json.Marshal(e)
+		clusters[i] = &containerpb.Cluster{}
+		_ = protoutil.Unmarshal(b, clusters[i])
+	}
+
+	out := make([]*Cluster, len(clusters))
+	var convert = func(i int, e *containerpb.Cluster) error {
 		out[i] = &Cluster{
 			Project:  project,
 			Name:     e.GetName(),
@@ -82,50 +70,50 @@ func (c *Client) ListClusters(project string) ([]*Cluster, error) {
 				}
 			}
 		}
+		return nil
 	}
-
+	var eg errgroup.Group
+	for i, e := range clusters {
+		eg.Go(func() error { return convert(i, e) })
+	}
+	_ = eg.Wait()
 	return out, nil
 }
 
 func (c *Client) GetCluster(project, location, name string) (*Cluster, error) {
-	conn, err := c.newClusterClient()
+	raw, err := exec.Run(exec.Command("gcloud",
+		"container",
+		"clusters",
+		"describe", name,
+		"--project", project,
+		"--location", location,
+		"--format", "json"))
 	if err != nil {
-		return nil, errors.Wrapf(err, "get cluster: new client")
-	}
-	defer conn.Close()
-
-	resp, err := conn.GetCluster(context.TODO(), &containerpb.GetClusterRequest{
-		Name: fmt.Sprintf("projects/%s/locations/%s/clusters/%s", project, location, name),
-	})
-
-	if err != nil {
-		var apiErr *apierror.APIError
-		if errors.As(err, &apiErr) {
-			if apiErr.GRPCStatus().Code() == codes.NotFound {
-				log.Printf("WARN: cluster %q not found", name)
-				return nil, nil
-			}
-			return nil, errors.New(fmt.Sprintf("get cluster request: %s", apiErr.GRPCStatus().Message()))
+		if strings.Contains(err.Error(), fmt.Sprintf("No cluster named '%s' in %s.", name, project)) {
+			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "get cluster: make request")
+		return nil, errors.Wrapf(err, "get cluster")
 	}
 
-	cluster := &Cluster{
-		Project:  project,
-		Name:     resp.GetName(),
-		Location: resp.GetLocation(),
+	var cluster containerpb.Cluster
+	_ = protoutil.Unmarshal([]byte(raw), &cluster)
+
+	out := &Cluster{
+		Project:   project,
+		Name:      cluster.GetName(),
+		Location:  cluster.GetLocation(),
+		NodePools: make([]*NodePool, len(cluster.GetNodePools())),
 	}
-	cluster.NodePools = make([]*NodePool, len(resp.GetNodePools()))
-	for i, p := range resp.GetNodePools() {
-		cluster.NodePools[i] = &NodePool{
+	for i, p := range cluster.GetNodePools() {
+		out.NodePools[i] = &NodePool{
 			Name:             p.GetName(),
 			InstanceGroups:   p.GetInstanceGroupUrls(),
 			Locations:        p.GetLocations(),
 			InitialNodeCount: p.GetInitialNodeCount(),
-			CurrentSize:      int32(getNodePoolSize(cluster.Project, cluster.Name, p.Name)),
+			CurrentSize:      int32(getNodePoolSize(project, cluster.Name, p.Name)),
 		}
 		if a := p.GetAutoscaling(); a != nil {
-			cluster.NodePools[i].Autoscaling = &Autoscaling{
+			out.NodePools[i].Autoscaling = &Autoscaling{
 				Enabled:           a.GetEnabled(),
 				MinNodeCount:      a.GetMinNodeCount(),
 				MaxNodeCount:      a.GetMaxNodeCount(),
@@ -136,28 +124,12 @@ func (c *Client) GetCluster(project, location, name string) (*Cluster, error) {
 			}
 		}
 	}
-
-	return cluster, nil
+	return out, nil
 }
 
-func (c *Client) PauseCluster(req PauseClusterRequest) error {
-	cluster, err := c.GetCluster(req.Project, req.Location, req.ClusterName)
-	if err != nil {
-		return errors.Wrapf(err, "pause cluster: get cluster")
-	}
-
-	if cluster == nil {
-		return errors.New(fmt.Sprintf("cluster %q not found", req.ClusterName))
-	}
-
-	conn, err := c.newClusterClient()
-	if err != nil {
-		return errors.Wrapf(err, "pause cluster: new connection")
-	}
-	defer conn.Close()
-
+func (c *Client) PauseCluster(cluster *Cluster, exceptPools []string) error {
 	var resize = func(cluster *Cluster, pool *NodePool) error {
-		_, err = exec.Run(exec.Command("gcloud",
+		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
 			"resize", cluster.Name,
@@ -174,7 +146,7 @@ func (c *Client) PauseCluster(req PauseClusterRequest) error {
 	}
 
 	var pause = func(cluster *Cluster, pool *NodePool) error {
-		_, err = exec.Run(exec.Command("gcloud",
+		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
 			"update", cluster.Name,
@@ -225,52 +197,32 @@ func (c *Client) PauseCluster(req PauseClusterRequest) error {
 		}
 	}
 
+	except := sets.New(exceptPools...)
+
 	var wg errgroup.Group
 	for _, p := range cluster.NodePools {
+		if except.Contains(p.Name) {
+			continue
+		}
 		wg.Go(func() error { return pause(cluster, p) })
 	}
 
-	if err = wg.Wait(); err != nil {
-		return err
-	}
-
-	// write the previous state to the backup state file
-	b, _ := json.Marshal(cluster)
-	log.Printf("INFO: Current State of the cluster %q (this message will be used in case the writing process has a problem):\n%s", cluster.Name, string(b))
-
-	if err = os.WriteFile(path.Join(c.Opts.BackupStatePath, genBackupFile(cluster)), b, 0644); err != nil {
-		return errors.Wrapf(err, "pause cluster: write backup state:")
-	}
-	log.Printf("INFO: pause cluster '%s' is completed!\n", cluster.Name)
-	return nil
+	return wg.Wait()
 }
 
-func (c *Client) UnpauseCluster(req UnpauseClusterRequest) error {
-	// load backup state
-	backupPath := path.Join(c.Opts.BackupStatePath, genBackupFile(&Cluster{Project: req.Project, Location: req.Location, Name: req.ClusterName}))
-	b, err := os.ReadFile(backupPath)
-	if err != nil {
-		log.Printf("WARN: read backup state file %q got error: %v\n", c.Opts.BackupStatePath, err)
-	}
+func (c *Client) UnpauseCluster(cluster *Cluster, exceptPools []string) error {
+	except := sets.New(exceptPools...)
+	for _, p := range cluster.NodePools {
+		if except.Contains(p.Name) {
+			continue
+		}
 
-	var previous Cluster
-	if err = json.Unmarshal(b, &previous); err != nil {
-		log.Printf("WARN: unmarshal backup state got error: %v\n", err)
-	}
-
-	conn, err := c.newClusterClient()
-	if err != nil {
-		return errors.Wrapf(err, "unpause cluster: new connection")
-	}
-	defer conn.Close()
-
-	for _, p := range previous.NodePools {
-		_, err = exec.Run(exec.Command("gcloud",
+		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
-			"update", previous.Name,
-			"--project", previous.Project,
-			"--location", previous.Location,
+			"update", cluster.Name,
+			"--project", cluster.Project,
+			"--location", cluster.Location,
 			"--node-pool", p.Name,
 			"--enable-autoscaling",
 			"--min-nodes", strconv.Itoa(int(p.Autoscaling.MinNodeCount)),
@@ -278,41 +230,28 @@ func (c *Client) UnpauseCluster(req UnpauseClusterRequest) error {
 			"--quiet",
 		))
 		if err != nil {
-			return errors.Wrapf(err, "unpause cluster: enable autoscaling '%s/%s'", previous.Name, p.Name)
+			return errors.Wrapf(err, "unpause cluster: enable autoscaling '%s/%s'", cluster.Name, p.Name)
 		}
-		log.Printf("INFO: enabled autoscaling for '%s/%s'\n", previous.Name, p.Name)
+		log.Printf("INFO: enabled autoscaling for '%s/%s'\n", cluster.Name, p.Name)
 
 		_, err = exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
-			"resize", previous.Name,
-			"--project", previous.Project,
-			"--location", previous.Location,
+			"resize", cluster.Name,
+			"--project", cluster.Project,
+			"--location", cluster.Location,
 			"--node-pool", p.Name,
 			"--num-nodes", strconv.Itoa(int(p.CurrentSize)),
 			"--quiet",
 		))
 		if err != nil {
-			return errors.Wrapf(err, "unpause cluster: resize pool '%s/%s'", previous.Name, p.Name)
+			return errors.Wrapf(err, "unpause cluster: resize pool '%s/%s'", cluster.Name, p.Name)
 		}
-		log.Printf("INFO: resized '%s/%s' to %d\n", previous.Name, p.Name, p.CurrentSize)
+		log.Printf("INFO: resized '%s/%s' to %d\n", cluster.Name, p.Name, p.CurrentSize)
 	}
 
-	log.Printf("INFO: unpause cluster '%s' is completed!\n", previous.Name)
-	_ = os.Remove(backupPath)
+	log.Printf("INFO: unpause cluster '%s' is completed!\n", cluster.Name)
 	return nil
-}
-
-func (c *Client) newClusterClient() (*container.ClusterManagerClient, error) {
-	var opts []option.ClientOption
-	if c.Opts.CredentialsFilePath != "" {
-		opts = append(opts, option.WithCredentialsFile(c.Opts.CredentialsFilePath))
-	}
-	return container.NewClusterManagerClient(context.TODO(), opts...)
-}
-
-func genBackupFile(cluster *Cluster) string {
-	return fmt.Sprintf("%s_%s_%s%s", cluster.Project, cluster.Location, cluster.Name, DefaultBackupStateSuffix)
 }
 
 func getNodePoolSize(project, cluster, pool string) int {
