@@ -6,6 +6,17 @@ import (
 	jsonpb "github.com/golang/protobuf/jsonpb"
 )
 
+// MarshalJSON is a custom marshaler for Config
+func (this *Config) MarshalJSON() ([]byte, error) {
+	str, err := CoreMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for Config
+func (this *Config) UnmarshalJSON(b []byte) error {
+	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
 // MarshalJSON is a custom marshaler for Schedule
 func (this *Schedule) MarshalJSON() ([]byte, error) {
 	str, err := CoreMarshaler.MarshalToString(this)
@@ -17,14 +28,47 @@ func (this *Schedule) UnmarshalJSON(b []byte) error {
 	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 
-// MarshalJSON is a custom marshaler for ExpectCluster
-func (this *ExpectCluster) MarshalJSON() ([]byte, error) {
+// MarshalJSON is a custom marshaler for Except
+func (this *Except) MarshalJSON() ([]byte, error) {
 	str, err := CoreMarshaler.MarshalToString(this)
 	return []byte(str), err
 }
 
-// UnmarshalJSON is a custom unmarshaler for ExpectCluster
-func (this *ExpectCluster) UnmarshalJSON(b []byte) error {
+// UnmarshalJSON is a custom unmarshaler for Except
+func (this *Except) UnmarshalJSON(b []byte) error {
+	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
+// MarshalJSON is a custom marshaler for Except_Cluster
+func (this *Except_Cluster) MarshalJSON() ([]byte, error) {
+	str, err := CoreMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for Except_Cluster
+func (this *Except_Cluster) UnmarshalJSON(b []byte) error {
+	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
+// MarshalJSON is a custom marshaler for Except_Sql
+func (this *Except_Sql) MarshalJSON() ([]byte, error) {
+	str, err := CoreMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for Except_Sql
+func (this *Except_Sql) UnmarshalJSON(b []byte) error {
+	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
+// MarshalJSON is a custom marshaler for Except_Vm
+func (this *Except_Vm) MarshalJSON() ([]byte, error) {
+	str, err := CoreMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for Except_Vm
+func (this *Except_Vm) UnmarshalJSON(b []byte) error {
 	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 

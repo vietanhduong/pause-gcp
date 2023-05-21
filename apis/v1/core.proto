@@ -1,23 +1,45 @@
 syntax = "proto3";
 package v1;
 
-import "google/protobuf/timestamp.proto";
+import "validate/validate.proto";
 
 option go_package = "github.com/vietanhduong/pause-gke-cluster/apis/v1";
 
-message Schedule {
-  string project = 1;
-  google.protobuf.Timestamp stop_at = 2;
-  google.protobuf.Timestamp start_at = 3;
-  Repeat repeat = 4;
-  repeated ExpectCluster expect_clusters = 5;
+message Config {
+  string state_output = 1;
+  repeated Schedule schedules = 2;
 }
 
-message ExpectCluster {
-  string name = 1;
-  repeated string pools = 2;
-  string zone = 3;
-  string region = 4;
+message Schedule {
+  string project = 1 [(validate.rules).string.min_len = 1];
+  string stop_at = 2 [(validate.rules).string.pattern = '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'];
+  string start_at = 3 [(validate.rules).string.pattern = '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'];
+  Repeat repeat = 4;
+  repeated Except except = 5;
+}
+
+message Except {
+  message Cluster {
+    string name = 1;
+    repeated string pools = 2;
+    string zone = 3;
+    string region = 4;
+  }
+
+  message Sql {
+    string name = 1;
+  }
+
+  message Vm {
+    string name = 1;
+    string zone = 2;
+  }
+
+  oneof specifier {
+    Cluster cluster = 1;
+    Sql sql = 2;
+    Vm vm = 3;
+  }
 }
 
 message Repeat {

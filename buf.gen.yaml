@@ -12,3 +12,7 @@ plugins:
   - name: golang-jsonshim
     out: .
     opt: paths=source_relative
+  - plugin: buf.build/bufbuild/validate-go
+    out: .
+    opt:
+      - paths=source_relative
