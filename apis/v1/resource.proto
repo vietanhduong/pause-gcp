@@ -1,6 +1,8 @@
 syntax = "proto3";
 package apis.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/vietanhduong/pause-gke-cluster/apis/v1";
 
 message Resource {
@@ -8,6 +10,11 @@ message Resource {
     Cluster cluster = 1;
     Sql sql = 2;
     Vm vm = 3;
+  }
+
+  oneof time_specifier {
+    google.protobuf.Timestamp paused_at = 4;
+    google.protobuf.Timestamp unpaused_at = 5;
   }
 }
 

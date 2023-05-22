@@ -128,7 +128,7 @@ func (c *Client) GetCluster(project, location, name string) (*apis.Cluster, erro
 	return out, nil
 }
 
-func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource) error {
+func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource, dryRun bool) (*apis.Cluster, error) {
 	var resize = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
@@ -147,6 +147,9 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource) er
 	}
 
 	var pause = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
+		if dryRun || pool.GetCurrentSize() == 0 {
+			return nil
+		}
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
@@ -200,19 +203,27 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource) er
 
 	ignore, exceptPools := shouldIgnore(cluster, except)
 	if ignore {
-		return nil
+		return cluster, nil
 	}
 	ignorePools := sets.New(exceptPools...)
 
-	var wg errgroup.Group
+	var pausedPools []*apis.Cluster_NodePool
+	var eg errgroup.Group
 	for _, p := range cluster.NodePools {
 		if ignorePools.Contains(p.GetName()) {
 			continue
 		}
-		wg.Go(func() error { return pause(cluster, p) })
+		pausedPools = append(pausedPools, p)
+		eg.Go(func() error { return pause(cluster, p) })
 	}
 
-	return wg.Wait()
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	cluster = cluster.DeepCopy()
+	cluster.NodePools = pausedPools
+	return cluster, nil
 }
 
 func (c *Client) UnpauseCluster(cluster *apis.Cluster, except []*apis.Resource) error {

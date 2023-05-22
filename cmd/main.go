@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 	"github.com/vietanhduong/pause-gcp/cmd/pause"
+	"github.com/vietanhduong/pause-gcp/cmd/unpause"
 	"github.com/vietanhduong/pause-gcp/cmd/version"
 	"os"
 )
@@ -13,6 +14,7 @@ func newRootCmd() *cobra.Command {
 	}
 	cmd.AddCommand(version.NewCommand())
 	cmd.AddCommand(pause.NewCommand())
+	cmd.AddCommand(unpause.NewCommand())
 	return cmd
 }
 

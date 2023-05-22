@@ -1,4 +1,4 @@
-package pause
+package utils
 
 import (
 	"fmt"
@@ -155,7 +155,7 @@ func Test_shouldExecute(t *testing.T) {
 			} else {
 				now = tt.time
 			}
-			actual := shouldExecute(tt.schedule(), tt.backup())
+			actual := ShouldExecute(tt.schedule(), tt.backup())
 			assert.Equal(t, tt.expected, actual)
 		})
 	}

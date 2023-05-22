@@ -1,27 +1,16 @@
 package pause
 
 import (
-	"fmt"
-	jsoniter "github.com/json-iterator/go"
-	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
+	"github.com/vietanhduong/pause-gcp/cmd/utils"
 	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
-	"os"
 	"path/filepath"
-	"sigs.k8s.io/yaml"
-	"strings"
 	"sync"
 	"time"
 )
-
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
-
-// now is time.Now function
-var now = time.Now
 
 type runConfig struct {
 	configFile string
@@ -32,12 +21,12 @@ type runConfig struct {
 
 func run(runCfg runConfig) error {
 	// parse config
-	cfg, err := parseConfigFile(runCfg.configFile)
+	cfg, err := utils.ParseConfigFile(runCfg.configFile)
 	if err != nil {
 		return err
 	}
 	// validate the config
-	if err = validateConfig(cfg); err != nil {
+	if err = utils.ValidateConfig(cfg); err != nil {
 		return err
 	}
 
@@ -61,36 +50,33 @@ func run(runCfg runConfig) error {
 }
 
 func execute(schedule *apis.Schedule, cfg runConfig) error {
-	state := readBackupState(cfg.configDir, schedule)
-	if !shouldExecute(schedule, state) && !cfg.force {
+	state := utils.ReadBackupState(utils.BuildBackupStateFilename(cfg.configDir, schedule))
+	if !utils.ShouldExecute(schedule, state) && !cfg.force {
 		return nil
 	}
 
 	newState := &apis.BackupState{
-		PauseAt:  timestamppb.New(time.Now()),
 		Project:  schedule.GetProject(),
 		Schedule: schedule,
 		DryRun:   cfg.dryRun,
 	}
 
 	// pause clusters
-	clusters, err := pauseCluster(schedule, cfg)
+	clusters, err := pauseCluster(schedule, state, cfg)
 	if err != nil {
 		return err
 	}
 
-	for _, c := range clusters {
-		newState.PausedResources = append(newState.PausedResources, &apis.Resource{Specifier: &apis.Resource_Cluster{Cluster: c}})
-	}
+	newState.PausedResources = append(newState.PausedResources, clusters...)
 
 	// pause vm
 
 	// pause sql
 
-	return writeBackupState(cfg.configDir, newState)
+	return utils.WriteBackupState(cfg.configDir, newState)
 }
 
-func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Cluster, error) {
+func pauseCluster(schedule *apis.Schedule, state *apis.BackupState, cfg runConfig) ([]*apis.Resource, error) {
 	var skip bool
 	for _, e := range schedule.GetExcept() {
 		if c := e.GetCluster(); c == (&apis.Cluster{}) {
@@ -110,26 +96,35 @@ func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Cluster, erro
 		return nil, err
 	}
 
-	tmp := make([]*apis.Cluster, len(clusters))
+	tmp := make([]*apis.Resource, len(clusters))
 	var wg sync.WaitGroup
 	wg.Add(len(clusters))
 	for i, c := range clusters {
+		// ensure that the cluster presents is paused or not (the state). If not, we should pause it.
+		if isClusterPaused(c, schedule) {
+			continue
+		}
+
 		go func(i int, c *apis.Cluster) {
 			defer wg.Done()
 			t := time.Now()
 			log.Printf("INFO: prepare to pause cluster '%s/%s'...", c.GetLocation(), c.GetName())
 			defer func() { log.Printf("INFO: pause cluster '%s/%s' complated (took=%v)!", c.GetLocation(), c.GetName(), time.Since(t)) }()
-			if !cfg.dryRun {
-				if err := client.PauseCluster(c.DeepCopy(), schedule.GetExcept()); err != nil {
-					log.Printf("WARN: pause cluster '%s/%s' got error: %v", c.GetLocation(), c.GetName(), err)
-					return
-				}
+
+			var cluster *apis.Cluster
+			var err error
+			if cluster, err = client.PauseCluster(c, schedule.GetExcept(), cfg.dryRun); err != nil {
+				log.Printf("WARN: pause cluster '%s/%s' got error: %v", c.GetLocation(), c.GetName(), err)
+				return
 			}
-			tmp[i] = c
+			tmp[i] = &apis.Resource{
+				Specifier:     &apis.Resource_Cluster{Cluster: cluster},
+				TimeSpecifier: &apis.Resource_PausedAt{PausedAt: timestamppb.New(time.Now())},
+			}
 		}(i, c)
 	}
 	wg.Wait()
-	var out []*apis.Cluster
+	var out []*apis.Resource
 	for _, c := range tmp {
 		if c != nil {
 			out = append(out, c)
@@ -138,104 +133,37 @@ func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Cluster, erro
 	return out, nil
 }
 
+// isClusterPaused ensure that if all node pools of the input cluster is paused. If a single node pool is not paused,
+// this still return true. PauseCluster function will do nothing if the node pool has size 0
+func isClusterPaused(cluster *apis.Cluster, schedule *apis.Schedule) bool {
+	exceptPools := sets.New[string]()
+
+	for _, e := range schedule.GetExcept() {
+		if exceptCluster := e.GetCluster(); exceptCluster != nil && exceptCluster.GetName() == cluster.GetName() {
+			if exceptCluster.GetLocation() != "" && exceptCluster.GetLocation() != cluster.GetLocation() {
+				continue
+			}
+			for _, p := range exceptCluster.GetNodePools() {
+				exceptPools.Insert(p.GetName())
+			}
+			break
+		}
+	}
+
+	for _, p := range cluster.GetNodePools() {
+		// if a pool is not contained in the except pool, but it's current size > 0 then we should pause it.
+		if !exceptPools.Contains(p.GetName()) && p.GetCurrentSize() > 0 {
+			return false
+		}
+	}
+
+	return false
+}
+
 func pauseVm(schedule *apis.Schedule) ([]*apis.Vm, error) {
 	return nil, nil
 }
 
 func pauseSql(schedule *apis.Schedule) ([]*apis.Vm, error) {
 	return nil, nil
-}
-
-func shouldExecute(schedule *apis.Schedule, state *apis.BackupState) bool {
-	// this means, the job already done and no repeat is specified. We don't need to re-run
-	// if the state is exists, but in dry-run mode, lets execute it again
-	if (schedule.GetRepeat() == nil || !schedule.GetRepeat().GetEveryDay()) && state != nil && !state.DryRun {
-		return false
-	}
-
-	repeat := schedule.GetRepeat()
-	day := now().Weekday()
-
-	if repeat.GetWeekDays() && (day == time.Saturday || day == time.Sunday) {
-		return false
-	}
-
-	if repeat.GetWeekends() && (day != time.Saturday && day != time.Sunday) {
-		return false
-	}
-
-	if len(repeat.GetOther().GetDays()) > 0 {
-		days := sets.New(repeat.GetOther().GetDays()...)
-		if !days.Contains(apis.Repeat_Day(int32(day))) {
-			return false
-		}
-	}
-	stopAt, _ := time.Parse("2006-01-02 15:04",
-		fmt.Sprintf("%s %s", now().Format("2006-01-02"), schedule.GetStopAt()))
-	return stopAt.Before(now())
-}
-
-func readBackupState(configDir string, schedule *apis.Schedule) *apis.BackupState {
-	b, _ := os.ReadFile(buildBackupStateFilename(configDir, schedule))
-	if len(b) == 0 {
-		return nil
-	}
-	var out apis.BackupState
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil
-	}
-	return &out
-}
-
-var marshaler = protojson.MarshalOptions{Indent: "    "}
-
-func writeBackupState(configDir string, state *apis.BackupState) error {
-	b, _ := marshaler.Marshal(state)
-	_ = os.MkdirAll(fmt.Sprintf("%s/.backup-state", configDir), 0755)
-	filename := buildBackupStateFilename(configDir, state.GetSchedule())
-	log.Printf("INFO: prepare to write backup state to file %q with content:\n%v", filename, string(b))
-	return os.WriteFile(filename, b, 0644)
-}
-
-func parseConfigFile(path string) (*apis.Config, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	if b, err = yaml.YAMLToJSON(b); err != nil {
-		return nil, err
-	}
-
-	var cfg apis.Config
-	err = json.Unmarshal(b, &cfg)
-	return &cfg, nil
-}
-
-func validateConfig(cfg *apis.Config) error {
-	if err := cfg.ValidateAll(); err != nil {
-		return err
-	}
-	ids := sets.New[string]()
-	for _, s := range cfg.GetSchedules() {
-		if id := buildScheduleId(s); ids.Contains(id) {
-			return errors.Errorf("duplicate id %q", id)
-		} else {
-			ids.Insert(id)
-		}
-	}
-	return nil
-}
-
-// buildScheduleId return an id by format: <project_id>_<stop_at>-<start_at>
-func buildScheduleId(schedule *apis.Schedule) string {
-	return fmt.Sprintf("%s_%s",
-		schedule.GetProject(),
-		strings.ReplaceAll(
-			fmt.Sprintf("%s-%s", schedule.GetStopAt(), schedule.GetStartAt()),
-			":", ""),
-	)
-}
-
-func buildBackupStateFilename(configDir string, schedule *apis.Schedule) string {
-	return fmt.Sprintf("%s/.backup-state/schedule_%s.json", configDir, buildScheduleId(schedule))
 }
