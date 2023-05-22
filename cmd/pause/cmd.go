@@ -8,9 +8,7 @@ import (
 
 func NewCommand() *cobra.Command {
 	var (
-		configFile string
-		force      bool
-		dryRun     bool
+		runCfg runConfig
 	)
 
 	var cmd = &cobra.Command{
@@ -25,13 +23,13 @@ Currently, we support GKE, Virtual Machine and Cloud Sql.`,
 			if err := testGcloud(); err != nil {
 				return err
 			}
-			return run(configFile, force)
+			return run(runCfg)
 		},
 	}
 
-	cmd.Flags().StringVarP(&configFile, "config", "c", "", "Pause GCP's config file. The input file must be one of `yaml` or `json` format.")
-	cmd.Flags().BoolVar(&force, "force", false, "Pause GCP resources even if not in a schedule if this flag is presented.")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate a pause")
+	cmd.Flags().StringVarP(&runCfg.configFile, "config", "c", "", "Pause GCP's config file. The input file must be one of `yaml` or `json` format.")
+	cmd.Flags().BoolVar(&runCfg.force, "force", false, "Pause GCP resources even if not in a schedule if this flag is presented.")
+	cmd.Flags().BoolVar(&runCfg.dryRun, "dry-run", false, "Simulate a pause")
 	return cmd
 }
 

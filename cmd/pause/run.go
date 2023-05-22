@@ -7,6 +7,8 @@ import (
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"os"
 	"path/filepath"
@@ -64,13 +66,28 @@ func execute(schedule *apis.Schedule, cfg runConfig) error {
 		return nil
 	}
 
+	newState := &apis.BackupState{
+		PauseAt:  timestamppb.New(time.Now()),
+		Project:  schedule.GetProject(),
+		Schedule: schedule,
+		DryRun:   cfg.dryRun,
+	}
+
 	// pause clusters
+	clusters, err := pauseCluster(schedule, cfg)
+	if err != nil {
+		return err
+	}
+
+	for _, c := range clusters {
+		newState.PausedResources = append(newState.PausedResources, &apis.Resource{Specifier: &apis.Resource_Cluster{Cluster: c}})
+	}
 
 	// pause vm
 
 	// pause sql
 
-	return nil
+	return writeBackupState(cfg.configDir, newState)
 }
 
 func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Cluster, error) {
@@ -159,7 +176,7 @@ func shouldExecute(schedule *apis.Schedule, state *apis.BackupState) bool {
 }
 
 func readBackupState(configDir string, schedule *apis.Schedule) *apis.BackupState {
-	b, _ := os.ReadFile(fmt.Sprintf("%s/.backup-state/schedule_%s.json", configDir, buildScheduleId(schedule)))
+	b, _ := os.ReadFile(buildBackupStateFilename(configDir, schedule))
 	if len(b) == 0 {
 		return nil
 	}
@@ -168,6 +185,16 @@ func readBackupState(configDir string, schedule *apis.Schedule) *apis.BackupStat
 		return nil
 	}
 	return &out
+}
+
+var marshaler = protojson.MarshalOptions{Indent: "    "}
+
+func writeBackupState(configDir string, state *apis.BackupState) error {
+	b, _ := marshaler.Marshal(state)
+	_ = os.MkdirAll(fmt.Sprintf("%s/.backup-state", configDir), 0755)
+	filename := buildBackupStateFilename(configDir, state.GetSchedule())
+	log.Printf("INFO: prepare to write backup state to file %q with content:\n%v", filename, string(b))
+	return os.WriteFile(filename, b, 0644)
 }
 
 func parseConfigFile(path string) (*apis.Config, error) {
@@ -207,4 +234,8 @@ func buildScheduleId(schedule *apis.Schedule) string {
 			fmt.Sprintf("%s-%s", schedule.GetStopAt(), schedule.GetStartAt()),
 			":", ""),
 	)
+}
+
+func buildBackupStateFilename(configDir string, schedule *apis.Schedule) string {
+	return fmt.Sprintf("%s/.backup-state/schedule_%s.json", configDir, buildScheduleId(schedule))
 }

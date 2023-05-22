@@ -24,4 +24,4 @@ go.work
 .DS_Store
 
 .idea/
-*.backup.state.json
+.backup-state/
