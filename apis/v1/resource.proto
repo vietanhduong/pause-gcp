@@ -1,0 +1,47 @@
+syntax = "proto3";
+package apis.v1;
+
+option go_package = "github.com/vietanhduong/pause-gke-cluster/apis/v1";
+
+message Resource {
+  oneof specifier {
+    Cluster cluster = 1;
+    Sql sql = 2;
+    Vm vm = 3;
+  }
+}
+
+message Cluster {
+  message NodePool {
+    message AutoScaling {
+      bool enabled = 1;
+      int32 min_node_count = 2;
+      int32 max_node_count = 3;
+      bool autoprovisioned = 4;
+      string location_policy = 5;
+      int32 total_min_node_count = 6;
+      int32 total_max_node_count = 7;
+    }
+
+    string name = 1;
+    repeated string instance_groups = 2;
+    repeated string locations = 3;
+    int32 initial_node_count = 4;
+    int32 current_size = 5;
+    AutoScaling autoscaling = 6;
+  }
+
+  string project = 1;
+  string name = 2;
+  string location = 3;
+  repeated NodePool node_pools = 4;
+}
+
+message Sql {
+  string name = 1;
+}
+
+message Vm {
+  string name = 1;
+  string zone = 2;
+}

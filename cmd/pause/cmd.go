@@ -10,6 +10,7 @@ func NewCommand() *cobra.Command {
 	var (
 		configFile string
 		force      bool
+		dryRun     bool
 	)
 
 	var cmd = &cobra.Command{
@@ -30,6 +31,7 @@ Currently, we support GKE, Virtual Machine and Cloud Sql.`,
 
 	cmd.Flags().StringVarP(&configFile, "config", "c", "", "Pause GCP's config file. The input file must be one of `yaml` or `json` format.")
 	cmd.Flags().BoolVar(&force, "force", false, "Pause GCP resources even if not in a schedule if this flag is presented.")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate a pause")
 	return cmd
 }
 

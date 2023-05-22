@@ -5,6 +5,7 @@ import (
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
+	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
@@ -25,7 +26,7 @@ func NewClient() *Client {
 	return client
 }
 
-func (c *Client) ListClusters(project string) ([]*Cluster, error) {
+func (c *Client) ListClusters(project string) ([]*apis.Cluster, error) {
 	raw, err := exec.Run(exec.Command("gcloud", "container", "clusters", "list", "--project", project, "--format", "json"))
 	if err != nil {
 		return nil, errors.Wrapf(err, "list clusters")
@@ -42,16 +43,16 @@ func (c *Client) ListClusters(project string) ([]*Cluster, error) {
 		_ = protoutil.Unmarshal(b, clusters[i])
 	}
 
-	out := make([]*Cluster, len(clusters))
+	out := make([]*apis.Cluster, len(clusters))
 	var convert = func(i int, e *containerpb.Cluster) error {
-		out[i] = &Cluster{
+		out[i] = &apis.Cluster{
 			Project:  project,
 			Name:     e.GetName(),
 			Location: e.GetLocation(),
 		}
-		out[i].NodePools = make([]*NodePool, len(e.GetNodePools()))
+		out[i].NodePools = make([]*apis.Cluster_NodePool, len(e.GetNodePools()))
 		for j, p := range e.GetNodePools() {
-			out[i].NodePools[j] = &NodePool{
+			out[i].NodePools[j] = &apis.Cluster_NodePool{
 				Name:             p.GetName(),
 				InstanceGroups:   p.GetInstanceGroupUrls(),
 				Locations:        p.GetLocations(),
@@ -59,7 +60,7 @@ func (c *Client) ListClusters(project string) ([]*Cluster, error) {
 				CurrentSize:      int32(getNodePoolSize(project, e.Name, p.Name)),
 			}
 			if a := p.GetAutoscaling(); a != nil {
-				out[i].NodePools[j].Autoscaling = &Autoscaling{
+				out[i].NodePools[j].Autoscaling = &apis.Cluster_NodePool_AutoScaling{
 					Enabled:           a.GetEnabled(),
 					MinNodeCount:      a.GetMinNodeCount(),
 					MaxNodeCount:      a.GetMaxNodeCount(),
@@ -80,7 +81,7 @@ func (c *Client) ListClusters(project string) ([]*Cluster, error) {
 	return out, nil
 }
 
-func (c *Client) GetCluster(project, location, name string) (*Cluster, error) {
+func (c *Client) GetCluster(project, location, name string) (*apis.Cluster, error) {
 	raw, err := exec.Run(exec.Command("gcloud",
 		"container",
 		"clusters",
@@ -98,14 +99,14 @@ func (c *Client) GetCluster(project, location, name string) (*Cluster, error) {
 	var cluster containerpb.Cluster
 	_ = protoutil.Unmarshal([]byte(raw), &cluster)
 
-	out := &Cluster{
+	out := &apis.Cluster{
 		Project:   project,
 		Name:      cluster.GetName(),
 		Location:  cluster.GetLocation(),
-		NodePools: make([]*NodePool, len(cluster.GetNodePools())),
+		NodePools: make([]*apis.Cluster_NodePool, len(cluster.GetNodePools())),
 	}
 	for i, p := range cluster.GetNodePools() {
-		out.NodePools[i] = &NodePool{
+		out.NodePools[i] = &apis.Cluster_NodePool{
 			Name:             p.GetName(),
 			InstanceGroups:   p.GetInstanceGroupUrls(),
 			Locations:        p.GetLocations(),
@@ -113,7 +114,7 @@ func (c *Client) GetCluster(project, location, name string) (*Cluster, error) {
 			CurrentSize:      int32(getNodePoolSize(project, cluster.Name, p.Name)),
 		}
 		if a := p.GetAutoscaling(); a != nil {
-			out.NodePools[i].Autoscaling = &Autoscaling{
+			out.NodePools[i].Autoscaling = &apis.Cluster_NodePool_AutoScaling{
 				Enabled:           a.GetEnabled(),
 				MinNodeCount:      a.GetMinNodeCount(),
 				MaxNodeCount:      a.GetMaxNodeCount(),
@@ -127,8 +128,8 @@ func (c *Client) GetCluster(project, location, name string) (*Cluster, error) {
 	return out, nil
 }
 
-func (c *Client) PauseCluster(cluster *Cluster, exceptPools []string) error {
-	var resize = func(cluster *Cluster, pool *NodePool) error {
+func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource) error {
+	var resize = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
@@ -145,7 +146,7 @@ func (c *Client) PauseCluster(cluster *Cluster, exceptPools []string) error {
 		return nil
 	}
 
-	var pause = func(cluster *Cluster, pool *NodePool) error {
+	var pause = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
@@ -197,11 +198,15 @@ func (c *Client) PauseCluster(cluster *Cluster, exceptPools []string) error {
 		}
 	}
 
-	except := sets.New(exceptPools...)
+	ignore, exceptPools := shouldIgnore(cluster, except)
+	if ignore {
+		return nil
+	}
+	ignorePools := sets.New(exceptPools...)
 
 	var wg errgroup.Group
 	for _, p := range cluster.NodePools {
-		if except.Contains(p.Name) {
+		if ignorePools.Contains(p.GetName()) {
 			continue
 		}
 		wg.Go(func() error { return pause(cluster, p) })
@@ -210,10 +215,14 @@ func (c *Client) PauseCluster(cluster *Cluster, exceptPools []string) error {
 	return wg.Wait()
 }
 
-func (c *Client) UnpauseCluster(cluster *Cluster, exceptPools []string) error {
-	except := sets.New(exceptPools...)
+func (c *Client) UnpauseCluster(cluster *apis.Cluster, except []*apis.Resource) error {
+	ignore, exceptPools := shouldIgnore(cluster, except)
+	if ignore {
+		return nil
+	}
+	ignorePools := sets.New(exceptPools...)
 	for _, p := range cluster.NodePools {
-		if except.Contains(p.Name) {
+		if ignorePools.Contains(p.GetName()) {
 			continue
 		}
 
@@ -270,4 +279,23 @@ func getNodePoolSize(project, cluster, pool string) int {
 	}
 	val, _ := strconv.Atoi(out)
 	return val
+}
+
+func shouldIgnore(cluster *apis.Cluster, except []*apis.Resource) (ignore bool, ignorePools []string) {
+	for _, e := range except {
+		if c := e.GetCluster(); c != nil && c.GetName() == cluster.GetName() {
+			if c.GetLocation() != "" && c.GetLocation() != cluster.GetLocation() {
+				continue
+			}
+			if len(c.GetNodePools()) == 0 {
+				return true, nil
+			}
+
+			for _, p := range c.GetNodePools() {
+				ignorePools = append(ignorePools, p.GetName())
+			}
+			return false, ignorePools
+		}
+	}
+	return false, nil
 }

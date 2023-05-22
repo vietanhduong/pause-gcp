@@ -56,8 +56,6 @@ func (m *Config) validate(all bool) error {
 
 	var errors []error
 
-	// no validation rules for StateOutput
-
 	for idx, item := range m.GetSchedules() {
 		_, _ = idx, item
 
@@ -168,6 +166,203 @@ var _ interface {
 	Cause() error
 	ErrorName() string
 } = ConfigValidationError{}
+
+// Validate checks the field values on BackupState with the rules defined in
+// the proto definition for this message. If any rules are violated, the first
+// error encountered is returned, or nil if there are no violations.
+func (m *BackupState) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on BackupState with the rules defined in
+// the proto definition for this message. If any rules are violated, the
+// result is a list of violation errors wrapped in BackupStateMultiError, or
+// nil if none found.
+func (m *BackupState) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *BackupState) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	if all {
+		switch v := interface{}(m.GetPauseAt()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, BackupStateValidationError{
+					field:  "PauseAt",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, BackupStateValidationError{
+					field:  "PauseAt",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetPauseAt()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return BackupStateValidationError{
+				field:  "PauseAt",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	if all {
+		switch v := interface{}(m.GetUnpauseAt()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, BackupStateValidationError{
+					field:  "UnpauseAt",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, BackupStateValidationError{
+					field:  "UnpauseAt",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetUnpauseAt()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return BackupStateValidationError{
+				field:  "UnpauseAt",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	// no validation rules for Project
+
+	for idx, item := range m.GetPausedResources() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, BackupStateValidationError{
+						field:  fmt.Sprintf("PausedResources[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, BackupStateValidationError{
+						field:  fmt.Sprintf("PausedResources[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return BackupStateValidationError{
+					field:  fmt.Sprintf("PausedResources[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
+	// no validation rules for Metadata
+
+	// no validation rules for DryRun
+
+	if len(errors) > 0 {
+		return BackupStateMultiError(errors)
+	}
+
+	return nil
+}
+
+// BackupStateMultiError is an error wrapping multiple validation errors
+// returned by BackupState.ValidateAll() if the designated constraints aren't met.
+type BackupStateMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m BackupStateMultiError) Error() string {
+	var msgs []string
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m BackupStateMultiError) AllErrors() []error { return m }
+
+// BackupStateValidationError is the validation error returned by
+// BackupState.Validate if the designated constraints aren't met.
+type BackupStateValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e BackupStateValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e BackupStateValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e BackupStateValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e BackupStateValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e BackupStateValidationError) ErrorName() string { return "BackupStateValidationError" }
+
+// Error satisfies the builtin error interface
+func (e BackupStateValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sBackupState.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = BackupStateValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = BackupStateValidationError{}
 
 // Validate checks the field values on Schedule with the rules defined in the
 // proto definition for this message. If any rules are violated, the first
@@ -368,232 +563,6 @@ var _Schedule_StopAt_Pattern = regexp.MustCompile("^([0-1]?[0-9]|2[0-3]):[0-5][0
 
 var _Schedule_StartAt_Pattern = regexp.MustCompile("^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
 
-// Validate checks the field values on Except with the rules defined in the
-// proto definition for this message. If any rules are violated, the first
-// error encountered is returned, or nil if there are no violations.
-func (m *Except) Validate() error {
-	return m.validate(false)
-}
-
-// ValidateAll checks the field values on Except with the rules defined in the
-// proto definition for this message. If any rules are violated, the result is
-// a list of violation errors wrapped in ExceptMultiError, or nil if none found.
-func (m *Except) ValidateAll() error {
-	return m.validate(true)
-}
-
-func (m *Except) validate(all bool) error {
-	if m == nil {
-		return nil
-	}
-
-	var errors []error
-
-	switch v := m.Specifier.(type) {
-	case *Except_Cluster_:
-		if v == nil {
-			err := ExceptValidationError{
-				field:  "Specifier",
-				reason: "oneof value cannot be a typed-nil",
-			}
-			if !all {
-				return err
-			}
-			errors = append(errors, err)
-		}
-
-		if all {
-			switch v := interface{}(m.GetCluster()).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, ExceptValidationError{
-						field:  "Cluster",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, ExceptValidationError{
-						field:  "Cluster",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(m.GetCluster()).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return ExceptValidationError{
-					field:  "Cluster",
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	case *Except_Sql_:
-		if v == nil {
-			err := ExceptValidationError{
-				field:  "Specifier",
-				reason: "oneof value cannot be a typed-nil",
-			}
-			if !all {
-				return err
-			}
-			errors = append(errors, err)
-		}
-
-		if all {
-			switch v := interface{}(m.GetSql()).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, ExceptValidationError{
-						field:  "Sql",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, ExceptValidationError{
-						field:  "Sql",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(m.GetSql()).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return ExceptValidationError{
-					field:  "Sql",
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	case *Except_Vm_:
-		if v == nil {
-			err := ExceptValidationError{
-				field:  "Specifier",
-				reason: "oneof value cannot be a typed-nil",
-			}
-			if !all {
-				return err
-			}
-			errors = append(errors, err)
-		}
-
-		if all {
-			switch v := interface{}(m.GetVm()).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, ExceptValidationError{
-						field:  "Vm",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, ExceptValidationError{
-						field:  "Vm",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(m.GetVm()).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return ExceptValidationError{
-					field:  "Vm",
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	default:
-		_ = v // ensures v is used
-	}
-
-	if len(errors) > 0 {
-		return ExceptMultiError(errors)
-	}
-
-	return nil
-}
-
-// ExceptMultiError is an error wrapping multiple validation errors returned by
-// Except.ValidateAll() if the designated constraints aren't met.
-type ExceptMultiError []error
-
-// Error returns a concatenation of all the error messages it wraps.
-func (m ExceptMultiError) Error() string {
-	var msgs []string
-	for _, err := range m {
-		msgs = append(msgs, err.Error())
-	}
-	return strings.Join(msgs, "; ")
-}
-
-// AllErrors returns a list of validation violation errors.
-func (m ExceptMultiError) AllErrors() []error { return m }
-
-// ExceptValidationError is the validation error returned by Except.Validate if
-// the designated constraints aren't met.
-type ExceptValidationError struct {
-	field  string
-	reason string
-	cause  error
-	key    bool
-}
-
-// Field function returns field value.
-func (e ExceptValidationError) Field() string { return e.field }
-
-// Reason function returns reason value.
-func (e ExceptValidationError) Reason() string { return e.reason }
-
-// Cause function returns cause value.
-func (e ExceptValidationError) Cause() error { return e.cause }
-
-// Key function returns key value.
-func (e ExceptValidationError) Key() bool { return e.key }
-
-// ErrorName returns error name.
-func (e ExceptValidationError) ErrorName() string { return "ExceptValidationError" }
-
-// Error satisfies the builtin error interface
-func (e ExceptValidationError) Error() string {
-	cause := ""
-	if e.cause != nil {
-		cause = fmt.Sprintf(" | caused by: %v", e.cause)
-	}
-
-	key := ""
-	if e.key {
-		key = "key for "
-	}
-
-	return fmt.Sprintf(
-		"invalid %sExcept.%s: %s%s",
-		key,
-		e.field,
-		e.reason,
-		cause)
-}
-
-var _ error = ExceptValidationError{}
-
-var _ interface {
-	Field() string
-	Reason() string
-	Key() bool
-	Cause() error
-	ErrorName() string
-} = ExceptValidationError{}
-
 // Validate checks the field values on Repeat with the rules defined in the
 // proto definition for this message. If any rules are violated, the first
 // error encountered is returned, or nil if there are no violations.
@@ -773,316 +742,6 @@ var _ interface {
 	Cause() error
 	ErrorName() string
 } = RepeatValidationError{}
-
-// Validate checks the field values on Except_Cluster with the rules defined in
-// the proto definition for this message. If any rules are violated, the first
-// error encountered is returned, or nil if there are no violations.
-func (m *Except_Cluster) Validate() error {
-	return m.validate(false)
-}
-
-// ValidateAll checks the field values on Except_Cluster with the rules defined
-// in the proto definition for this message. If any rules are violated, the
-// result is a list of violation errors wrapped in Except_ClusterMultiError,
-// or nil if none found.
-func (m *Except_Cluster) ValidateAll() error {
-	return m.validate(true)
-}
-
-func (m *Except_Cluster) validate(all bool) error {
-	if m == nil {
-		return nil
-	}
-
-	var errors []error
-
-	// no validation rules for Name
-
-	// no validation rules for Zone
-
-	// no validation rules for Region
-
-	if len(errors) > 0 {
-		return Except_ClusterMultiError(errors)
-	}
-
-	return nil
-}
-
-// Except_ClusterMultiError is an error wrapping multiple validation errors
-// returned by Except_Cluster.ValidateAll() if the designated constraints
-// aren't met.
-type Except_ClusterMultiError []error
-
-// Error returns a concatenation of all the error messages it wraps.
-func (m Except_ClusterMultiError) Error() string {
-	var msgs []string
-	for _, err := range m {
-		msgs = append(msgs, err.Error())
-	}
-	return strings.Join(msgs, "; ")
-}
-
-// AllErrors returns a list of validation violation errors.
-func (m Except_ClusterMultiError) AllErrors() []error { return m }
-
-// Except_ClusterValidationError is the validation error returned by
-// Except_Cluster.Validate if the designated constraints aren't met.
-type Except_ClusterValidationError struct {
-	field  string
-	reason string
-	cause  error
-	key    bool
-}
-
-// Field function returns field value.
-func (e Except_ClusterValidationError) Field() string { return e.field }
-
-// Reason function returns reason value.
-func (e Except_ClusterValidationError) Reason() string { return e.reason }
-
-// Cause function returns cause value.
-func (e Except_ClusterValidationError) Cause() error { return e.cause }
-
-// Key function returns key value.
-func (e Except_ClusterValidationError) Key() bool { return e.key }
-
-// ErrorName returns error name.
-func (e Except_ClusterValidationError) ErrorName() string { return "Except_ClusterValidationError" }
-
-// Error satisfies the builtin error interface
-func (e Except_ClusterValidationError) Error() string {
-	cause := ""
-	if e.cause != nil {
-		cause = fmt.Sprintf(" | caused by: %v", e.cause)
-	}
-
-	key := ""
-	if e.key {
-		key = "key for "
-	}
-
-	return fmt.Sprintf(
-		"invalid %sExcept_Cluster.%s: %s%s",
-		key,
-		e.field,
-		e.reason,
-		cause)
-}
-
-var _ error = Except_ClusterValidationError{}
-
-var _ interface {
-	Field() string
-	Reason() string
-	Key() bool
-	Cause() error
-	ErrorName() string
-} = Except_ClusterValidationError{}
-
-// Validate checks the field values on Except_Sql with the rules defined in the
-// proto definition for this message. If any rules are violated, the first
-// error encountered is returned, or nil if there are no violations.
-func (m *Except_Sql) Validate() error {
-	return m.validate(false)
-}
-
-// ValidateAll checks the field values on Except_Sql with the rules defined in
-// the proto definition for this message. If any rules are violated, the
-// result is a list of violation errors wrapped in Except_SqlMultiError, or
-// nil if none found.
-func (m *Except_Sql) ValidateAll() error {
-	return m.validate(true)
-}
-
-func (m *Except_Sql) validate(all bool) error {
-	if m == nil {
-		return nil
-	}
-
-	var errors []error
-
-	// no validation rules for Name
-
-	if len(errors) > 0 {
-		return Except_SqlMultiError(errors)
-	}
-
-	return nil
-}
-
-// Except_SqlMultiError is an error wrapping multiple validation errors
-// returned by Except_Sql.ValidateAll() if the designated constraints aren't met.
-type Except_SqlMultiError []error
-
-// Error returns a concatenation of all the error messages it wraps.
-func (m Except_SqlMultiError) Error() string {
-	var msgs []string
-	for _, err := range m {
-		msgs = append(msgs, err.Error())
-	}
-	return strings.Join(msgs, "; ")
-}
-
-// AllErrors returns a list of validation violation errors.
-func (m Except_SqlMultiError) AllErrors() []error { return m }
-
-// Except_SqlValidationError is the validation error returned by
-// Except_Sql.Validate if the designated constraints aren't met.
-type Except_SqlValidationError struct {
-	field  string
-	reason string
-	cause  error
-	key    bool
-}
-
-// Field function returns field value.
-func (e Except_SqlValidationError) Field() string { return e.field }
-
-// Reason function returns reason value.
-func (e Except_SqlValidationError) Reason() string { return e.reason }
-
-// Cause function returns cause value.
-func (e Except_SqlValidationError) Cause() error { return e.cause }
-
-// Key function returns key value.
-func (e Except_SqlValidationError) Key() bool { return e.key }
-
-// ErrorName returns error name.
-func (e Except_SqlValidationError) ErrorName() string { return "Except_SqlValidationError" }
-
-// Error satisfies the builtin error interface
-func (e Except_SqlValidationError) Error() string {
-	cause := ""
-	if e.cause != nil {
-		cause = fmt.Sprintf(" | caused by: %v", e.cause)
-	}
-
-	key := ""
-	if e.key {
-		key = "key for "
-	}
-
-	return fmt.Sprintf(
-		"invalid %sExcept_Sql.%s: %s%s",
-		key,
-		e.field,
-		e.reason,
-		cause)
-}
-
-var _ error = Except_SqlValidationError{}
-
-var _ interface {
-	Field() string
-	Reason() string
-	Key() bool
-	Cause() error
-	ErrorName() string
-} = Except_SqlValidationError{}
-
-// Validate checks the field values on Except_Vm with the rules defined in the
-// proto definition for this message. If any rules are violated, the first
-// error encountered is returned, or nil if there are no violations.
-func (m *Except_Vm) Validate() error {
-	return m.validate(false)
-}
-
-// ValidateAll checks the field values on Except_Vm with the rules defined in
-// the proto definition for this message. If any rules are violated, the
-// result is a list of violation errors wrapped in Except_VmMultiError, or nil
-// if none found.
-func (m *Except_Vm) ValidateAll() error {
-	return m.validate(true)
-}
-
-func (m *Except_Vm) validate(all bool) error {
-	if m == nil {
-		return nil
-	}
-
-	var errors []error
-
-	// no validation rules for Name
-
-	// no validation rules for Zone
-
-	if len(errors) > 0 {
-		return Except_VmMultiError(errors)
-	}
-
-	return nil
-}
-
-// Except_VmMultiError is an error wrapping multiple validation errors returned
-// by Except_Vm.ValidateAll() if the designated constraints aren't met.
-type Except_VmMultiError []error
-
-// Error returns a concatenation of all the error messages it wraps.
-func (m Except_VmMultiError) Error() string {
-	var msgs []string
-	for _, err := range m {
-		msgs = append(msgs, err.Error())
-	}
-	return strings.Join(msgs, "; ")
-}
-
-// AllErrors returns a list of validation violation errors.
-func (m Except_VmMultiError) AllErrors() []error { return m }
-
-// Except_VmValidationError is the validation error returned by
-// Except_Vm.Validate if the designated constraints aren't met.
-type Except_VmValidationError struct {
-	field  string
-	reason string
-	cause  error
-	key    bool
-}
-
-// Field function returns field value.
-func (e Except_VmValidationError) Field() string { return e.field }
-
-// Reason function returns reason value.
-func (e Except_VmValidationError) Reason() string { return e.reason }
-
-// Cause function returns cause value.
-func (e Except_VmValidationError) Cause() error { return e.cause }
-
-// Key function returns key value.
-func (e Except_VmValidationError) Key() bool { return e.key }
-
-// ErrorName returns error name.
-func (e Except_VmValidationError) ErrorName() string { return "Except_VmValidationError" }
-
-// Error satisfies the builtin error interface
-func (e Except_VmValidationError) Error() string {
-	cause := ""
-	if e.cause != nil {
-		cause = fmt.Sprintf(" | caused by: %v", e.cause)
-	}
-
-	key := ""
-	if e.key {
-		key = "key for "
-	}
-
-	return fmt.Sprintf(
-		"invalid %sExcept_Vm.%s: %s%s",
-		key,
-		e.field,
-		e.reason,
-		cause)
-}
-
-var _ error = Except_VmValidationError{}
-
-var _ interface {
-	Field() string
-	Reason() string
-	Key() bool
-	Cause() error
-	ErrorName() string
-} = Except_VmValidationError{}
 
 // Validate checks the field values on Repeat_Other with the rules defined in
 // the proto definition for this message. If any rules are violated, the first

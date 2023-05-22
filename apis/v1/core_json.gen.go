@@ -17,6 +17,17 @@ func (this *Config) UnmarshalJSON(b []byte) error {
 	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 
+// MarshalJSON is a custom marshaler for BackupState
+func (this *BackupState) MarshalJSON() ([]byte, error) {
+	str, err := CoreMarshaler.MarshalToString(this)
+	return []byte(str), err
+}
+
+// UnmarshalJSON is a custom unmarshaler for BackupState
+func (this *BackupState) UnmarshalJSON(b []byte) error {
+	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
+}
+
 // MarshalJSON is a custom marshaler for Schedule
 func (this *Schedule) MarshalJSON() ([]byte, error) {
 	str, err := CoreMarshaler.MarshalToString(this)
@@ -25,50 +36,6 @@ func (this *Schedule) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON is a custom unmarshaler for Schedule
 func (this *Schedule) UnmarshalJSON(b []byte) error {
-	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
-}
-
-// MarshalJSON is a custom marshaler for Except
-func (this *Except) MarshalJSON() ([]byte, error) {
-	str, err := CoreMarshaler.MarshalToString(this)
-	return []byte(str), err
-}
-
-// UnmarshalJSON is a custom unmarshaler for Except
-func (this *Except) UnmarshalJSON(b []byte) error {
-	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
-}
-
-// MarshalJSON is a custom marshaler for Except_Cluster
-func (this *Except_Cluster) MarshalJSON() ([]byte, error) {
-	str, err := CoreMarshaler.MarshalToString(this)
-	return []byte(str), err
-}
-
-// UnmarshalJSON is a custom unmarshaler for Except_Cluster
-func (this *Except_Cluster) UnmarshalJSON(b []byte) error {
-	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
-}
-
-// MarshalJSON is a custom marshaler for Except_Sql
-func (this *Except_Sql) MarshalJSON() ([]byte, error) {
-	str, err := CoreMarshaler.MarshalToString(this)
-	return []byte(str), err
-}
-
-// UnmarshalJSON is a custom unmarshaler for Except_Sql
-func (this *Except_Sql) UnmarshalJSON(b []byte) error {
-	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
-}
-
-// MarshalJSON is a custom marshaler for Except_Vm
-func (this *Except_Vm) MarshalJSON() ([]byte, error) {
-	str, err := CoreMarshaler.MarshalToString(this)
-	return []byte(str), err
-}
-
-// UnmarshalJSON is a custom unmarshaler for Except_Vm
-func (this *Except_Vm) UnmarshalJSON(b []byte) error {
 	return CoreUnmarshaler.Unmarshal(bytes.NewReader(b), this)
 }
 
