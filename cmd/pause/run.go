@@ -18,6 +18,7 @@ type runConfig struct {
 	configDir  string
 	force      bool
 	dryRun     bool
+	gkeClient  gke.Interface
 }
 
 func run(runCfg runConfig) error {
@@ -56,10 +57,16 @@ func execute(schedule *apis.Schedule, cfg runConfig) error {
 		return nil
 	}
 
-	newState := &apis.BackupState{
-		Project:  schedule.GetProject(),
-		Schedule: schedule,
-		DryRun:   cfg.dryRun,
+	// we just write the backup state at the first run. The main point of a backup state if capture first state of resource
+	// and when unpause we can roll back to the config we captured
+	var writeState bool
+
+	if state == nil {
+		writeState = true
+		state = &apis.BackupState{
+			Project:  schedule.GetProject(),
+			Schedule: schedule,
+		}
 	}
 
 	// pause clusters
@@ -68,18 +75,26 @@ func execute(schedule *apis.Schedule, cfg runConfig) error {
 		return err
 	}
 
-	newState.PausedResources = append(newState.PausedResources, clusters...)
+	state.PausedResources = append(state.PausedResources, clusters...)
 
 	// pause vm
 
 	// pause sql
 
-	return utils.WriteBackupState(cfg.configDir, newState)
+	if cfg.dryRun {
+		log.Printf("INFO: skip writing backup state with dry-run mode!")
+	} else if !writeState {
+		log.Printf("INFO: backup state already exists, skip re-write")
+	}
+
+	if !cfg.dryRun && writeState {
+		return utils.WriteBackupState(cfg.configDir, state)
+	}
+	return nil
 }
 
 func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Resource, error) {
-	client := gke.NewClient()
-	clusters, err := client.ListClusters(schedule.GetProject())
+	clusters, err := cfg.gkeClient.ListClusters(schedule.GetProject())
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +149,7 @@ func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Resource, err
 
 			var cluster *apis.Cluster
 			var err error
-			if cluster, err = client.PauseCluster(c, cfg.dryRun); err != nil {
+			if cluster, err = cfg.gkeClient.PauseCluster(c, cfg.dryRun); err != nil {
 				log.Printf("WARN: pause cluster '%s/%s' got error: %v", c.GetLocation(), c.GetName(), err)
 				return
 			}

@@ -20,6 +20,15 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Client struct{}
 
+type Interface interface {
+	ListClusters(project string) ([]*apis.Cluster, error)
+	GetCluster(project, location, name string) (*apis.Cluster, error)
+	PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster, error)
+	UnpauseCluster(cluster *apis.Cluster) error
+}
+
+var _ Interface = (*Client)(nil)
+
 func NewClient() *Client {
 	client := &Client{}
 	return client
@@ -74,6 +83,7 @@ func (c *Client) ListClusters(project string) ([]*apis.Cluster, error) {
 	}
 	var eg errgroup.Group
 	for i, e := range clusters {
+		i, e := i, e
 		eg.Go(func() error { return convert(i, e) })
 	}
 	_ = eg.Wait()
@@ -146,29 +156,32 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster
 	}
 
 	var pause = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
+		if pool.GetAutoscaling() != nil || pool.GetAutoscaling().GetEnabled() {
+			_, err := exec.Run(exec.Command("gcloud",
+				"container",
+				"clusters",
+				"update", cluster.Name,
+				"--project", cluster.Project,
+				"--location", cluster.Location,
+				"--node-pool", pool.Name,
+				"--no-enable-autoscaling",
+				"--quiet",
+			))
+			if err != nil {
+				return errors.Wrapf(err, "pause cluster: disable autoscaling '%s/%s'", cluster.Name, pool.Name)
+			}
+			log.Printf("INFO: disabled autoscaling of '%s/%s'\n", cluster.Name, pool.Name)
+		}
+
 		if dryRun || pool.GetCurrentSize() == 0 {
 			return nil
 		}
-		_, err := exec.Run(exec.Command("gcloud",
-			"container",
-			"clusters",
-			"update", cluster.Name,
-			"--project", cluster.Project,
-			"--location", cluster.Location,
-			"--node-pool", pool.Name,
-			"--no-enable-autoscaling",
-			"--quiet",
-		))
-		if err != nil {
-			return errors.Wrapf(err, "pause cluster: disable autoscaling '%s/%s'", cluster.Name, pool.Name)
-		}
-		log.Printf("INFO: disabled autoscaling of '%s/%s'\n", cluster.Name, pool.Name)
 
 		ticker := time.NewTicker(time.Second)
 
 		// resize node pool isn't completed at the first time. After disable the autoscaling, GCP set the nodeCount is
 		// the initialNodeCount. Currently, we can't change the initialNodeCount setting.
-		if err = resize(cluster, pool); err != nil {
+		if err := resize(cluster, pool); err != nil {
 			return err
 		}
 		// this will ensure that the nodeCount will be 0
@@ -181,7 +194,7 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster
 				} else {
 					log.Printf("INFO: current size of '%s/%s': %d\n", cluster.Name, pool.Name, size)
 				}
-				_, err = exec.Run(exec.Command("gcloud",
+				_, err := exec.Run(exec.Command("gcloud",
 					"container",
 					"clusters",
 					"resize", cluster.Name,
@@ -200,52 +213,66 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster
 		}
 	}
 
-	var eg errgroup.Group
+	var err error
+	defer func() {
+		if err != nil {
+			log.Printf("INFO: error detected, prepare to rollback cluster '%s/%s'.", cluster.GetLocation(), cluster.GetName())
+			_ = c.UnpauseCluster(cluster)
+		}
+	}()
+
 	for _, p := range cluster.NodePools {
-		eg.Go(func() error { return pause(cluster, p) })
+		if err = pause(cluster, p); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
 	return cluster, nil
 }
 
 func (c *Client) UnpauseCluster(cluster *apis.Cluster) error {
-	for _, p := range cluster.NodePools {
-		_, err := exec.Run(exec.Command("gcloud",
-			"container",
-			"clusters",
-			"update", cluster.Name,
-			"--project", cluster.Project,
-			"--location", cluster.Location,
-			"--node-pool", p.Name,
-			"--enable-autoscaling",
-			"--min-nodes", strconv.Itoa(int(p.Autoscaling.MinNodeCount)),
-			"--max-nodes", strconv.Itoa(int(p.Autoscaling.MaxNodeCount)),
-			"--quiet",
-		))
-		if err != nil {
-			return errors.Wrapf(err, "unpause cluster: enable autoscaling '%s/%s'", cluster.Name, p.Name)
+	var unpause = func(cluster *apis.Cluster, p *apis.Cluster_NodePool) error {
+		if p.GetAutoscaling() != nil && p.GetAutoscaling().GetEnabled() {
+			_, err := exec.Run(exec.Command("gcloud",
+				"container",
+				"clusters",
+				"update", cluster.Name,
+				"--project", cluster.Project,
+				"--location", cluster.Location,
+				"--node-pool", p.GetName(),
+				"--enable-autoscaling",
+				"--min-nodes", strconv.Itoa(int(p.GetAutoscaling().GetMinNodeCount())),
+				"--max-nodes", strconv.Itoa(int(p.GetAutoscaling().GetMaxNodeCount())),
+				"--quiet",
+			))
+			if err != nil {
+				return errors.Wrapf(err, "unpause cluster: enable autoscaling '%s/%s'", cluster.Name, p.Name)
+			}
+			log.Printf("INFO: enabled autoscaling for '%s/%s'\n", cluster.Name, p.Name)
 		}
-		log.Printf("INFO: enabled autoscaling for '%s/%s'\n", cluster.Name, p.Name)
 
-		_, err = exec.Run(exec.Command("gcloud",
+		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
 			"resize", cluster.Name,
 			"--project", cluster.Project,
 			"--location", cluster.Location,
-			"--node-pool", p.Name,
-			"--num-nodes", strconv.Itoa(int(p.CurrentSize)),
+			"--node-pool", p.GetName(),
+			"--num-nodes", strconv.Itoa(int(p.GetCurrentSize())),
 			"--quiet",
 		))
 		if err != nil {
 			return errors.Wrapf(err, "unpause cluster: resize pool '%s/%s'", cluster.Name, p.Name)
 		}
-		log.Printf("INFO: resized '%s/%s' to %d\n", cluster.Name, p.Name, p.CurrentSize)
+		log.Printf("INFO: resized '%s/%s' to %d\n", cluster.Name, p.GetName(), p.GetCurrentSize())
+		return nil
 	}
 
+	for _, p := range cluster.NodePools {
+		if err := unpause(cluster, p); err != nil {
+			return err
+		}
+	}
 	log.Printf("INFO: unpause cluster '%s' is completed!\n", cluster.Name)
 	return nil
 }

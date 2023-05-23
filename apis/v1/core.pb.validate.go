@@ -227,8 +227,6 @@ func (m *BackupState) validate(all bool) error {
 
 	// no validation rules for Metadata
 
-	// no validation rules for DryRun
-
 	if all {
 		switch v := interface{}(m.GetSchedule()).(type) {
 		case interface{ ValidateAll() error }:

@@ -14,8 +14,7 @@ message BackupState {
   string project = 1;
   repeated apis.v1.Resource paused_resources = 2;
   map<string, string> metadata = 4;
-  bool dry_run = 5;
-  Schedule schedule = 6;
+  Schedule schedule = 5;
 }
 
 message Schedule {

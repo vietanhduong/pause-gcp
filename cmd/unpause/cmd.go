@@ -3,6 +3,7 @@ package unpause
 import (
 	"github.com/spf13/cobra"
 	"github.com/vietanhduong/pause-gcp/cmd/utils"
+	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 )
 
@@ -23,6 +24,7 @@ This command require a config file to detect the backup state folder. If there i
 			if err := testGcloud(); err != nil {
 				return err
 			}
+			runCfg.gkeClient = gke.NewClient()
 			return run(runCfg)
 		},
 	}

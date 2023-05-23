@@ -3,6 +3,7 @@ package pause
 import (
 	"github.com/spf13/cobra"
 	"github.com/vietanhduong/pause-gcp/cmd/utils"
+	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 )
 
@@ -23,6 +24,7 @@ Currently, we support GKE, Virtual Machine and Cloud Sql.`,
 			if err := testGcloud(); err != nil {
 				return err
 			}
+			runCfg.gkeClient = gke.NewClient()
 			return run(runCfg)
 		},
 	}

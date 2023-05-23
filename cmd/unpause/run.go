@@ -17,6 +17,8 @@ import (
 type runConfig struct {
 	configFile string
 	force      bool
+
+	gkeClient gke.Interface
 }
 
 func run(runCfg runConfig) error {
@@ -42,7 +44,7 @@ func run(runCfg runConfig) error {
 	for _, p := range backups {
 		path := filepath.Join(backupDir, p)
 		state := utils.ReadBackupState(path)
-		if state == nil || state.DryRun {
+		if state == nil {
 			continue
 		}
 
@@ -53,7 +55,7 @@ func run(runCfg runConfig) error {
 			t := time.Now()
 			log.Printf("INFO: prepare to execute backup(project=%s)...\n", state.GetProject())
 			defer func() { log.Printf("INFO: execute backup(project=%s) completed (took=%v)!\n", state.GetProject(), time.Since(t)) }()
-			newState, err := execute(state, runCfg.force || removed)
+			newState, err := execute(state, runCfg.force || removed, runCfg)
 			if err != nil {
 				log.Printf("WARN: execute backup(project=%s) got error: %v\n", state.GetProject(), err)
 				_ = utils.WriteBackupState(backupDir, newState)
@@ -73,7 +75,7 @@ func run(runCfg runConfig) error {
 	return nil
 }
 
-func execute(state *apis.BackupState, force bool) (*apis.BackupState, error) {
+func execute(state *apis.BackupState, force bool, cfg runConfig) (*apis.BackupState, error) {
 	if !utils.ShouldExecute(false, state.GetSchedule(), nil) && !force {
 		return state, nil
 	}
@@ -86,7 +88,7 @@ func execute(state *apis.BackupState, force bool) (*apis.BackupState, error) {
 
 			switch r := pr.GetSpecifier().(type) {
 			case *apis.Resource_Cluster:
-				if err := unpauseCluster(r.Cluster); err != nil {
+				if err := unpauseCluster(r.Cluster, cfg); err != nil {
 					log.Printf("WARN: unpause cluster '%s/%s' got error: %v", r.Cluster.GetLocation(), r.Cluster.GetName(), err)
 				} else {
 					state.PausedResources[i] = nil
@@ -113,13 +115,11 @@ func execute(state *apis.BackupState, force bool) (*apis.BackupState, error) {
 	return state, nil
 }
 
-func unpauseCluster(c *apis.Cluster) error {
+func unpauseCluster(c *apis.Cluster, cfg runConfig) error {
 	t := time.Now()
 	log.Printf("INFO: prepare to unpause cluster '%s/%s'...", c.GetLocation(), c.GetName())
 	defer func() { log.Printf("INFO: unpause cluster '%s/%s' complete (took=%v)!", c.GetLocation(), c.GetName(), time.Since(t)) }()
-
-	client := gke.NewClient()
-	return client.UnpauseCluster(c)
+	return cfg.gkeClient.UnpauseCluster(c)
 }
 
 func getBackupStateFiles(dir string) ([]string, error) {

@@ -21,7 +21,7 @@ var now = time.Now
 func ShouldExecute(pause bool, schedule *apis.Schedule, state *apis.BackupState) bool {
 	// this means, the job already done and no repeat is specified. We don't need to re-run
 	// if the state is exists, but in dry-run mode, lets execute it again
-	if (schedule.GetRepeat() == nil || !schedule.GetRepeat().GetEveryDay()) && state != nil && !state.DryRun {
+	if (schedule.GetRepeat() == nil || !schedule.GetRepeat().GetEveryDay()) && state != nil {
 		return false
 	}
 
