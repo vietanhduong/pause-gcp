@@ -8,7 +8,6 @@ import (
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 	"log"
@@ -128,7 +127,7 @@ func (c *Client) GetCluster(project, location, name string) (*apis.Cluster, erro
 	return out, nil
 }
 
-func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource, dryRun bool) (*apis.Cluster, error) {
+func (c *Client) PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster, error) {
 	var resize = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
@@ -180,7 +179,7 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource, dr
 					log.Printf("INFO: resized pool for '%s/%s' is completed!\n", cluster.Name, pool.Name)
 					return nil
 				} else {
-					log.Printf("INFO: current size of '%s/%s':%d\n", cluster.Name, pool.Name, size)
+					log.Printf("INFO: current size of '%s/%s': %d\n", cluster.Name, pool.Name, size)
 				}
 				_, err = exec.Run(exec.Command("gcloud",
 					"container",
@@ -201,42 +200,19 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, except []*apis.Resource, dr
 		}
 	}
 
-	ignore, exceptPools := shouldIgnore(cluster, except)
-	if ignore {
-		return cluster, nil
-	}
-	ignorePools := sets.New(exceptPools...)
-
-	var pausedPools []*apis.Cluster_NodePool
 	var eg errgroup.Group
 	for _, p := range cluster.NodePools {
-		if ignorePools.Contains(p.GetName()) {
-			continue
-		}
-		pausedPools = append(pausedPools, p)
 		eg.Go(func() error { return pause(cluster, p) })
 	}
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
-
-	cluster = cluster.DeepCopy()
-	cluster.NodePools = pausedPools
 	return cluster, nil
 }
 
-func (c *Client) UnpauseCluster(cluster *apis.Cluster, except []*apis.Resource) error {
-	ignore, exceptPools := shouldIgnore(cluster, except)
-	if ignore {
-		return nil
-	}
-	ignorePools := sets.New(exceptPools...)
+func (c *Client) UnpauseCluster(cluster *apis.Cluster) error {
 	for _, p := range cluster.NodePools {
-		if ignorePools.Contains(p.GetName()) {
-			continue
-		}
-
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
@@ -290,23 +266,4 @@ func getNodePoolSize(project, cluster, pool string) int {
 	}
 	val, _ := strconv.Atoi(out)
 	return val
-}
-
-func shouldIgnore(cluster *apis.Cluster, except []*apis.Resource) (ignore bool, ignorePools []string) {
-	for _, e := range except {
-		if c := e.GetCluster(); c != nil && c.GetName() == cluster.GetName() {
-			if c.GetLocation() != "" && c.GetLocation() != cluster.GetLocation() {
-				continue
-			}
-			if len(c.GetNodePools()) == 0 {
-				return true, nil
-			}
-
-			for _, p := range c.GetNodePools() {
-				ignorePools = append(ignorePools, p.GetName())
-			}
-			return false, ignorePools
-		}
-	}
-	return false, nil
 }

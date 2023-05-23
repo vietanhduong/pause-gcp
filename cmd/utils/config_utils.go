@@ -18,7 +18,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var now = time.Now
 
-func ShouldExecute(schedule *apis.Schedule, state *apis.BackupState) bool {
+func ShouldExecute(pause bool, schedule *apis.Schedule, state *apis.BackupState) bool {
 	// this means, the job already done and no repeat is specified. We don't need to re-run
 	// if the state is exists, but in dry-run mode, lets execute it again
 	if (schedule.GetRepeat() == nil || !schedule.GetRepeat().GetEveryDay()) && state != nil && !state.DryRun {
@@ -42,9 +42,19 @@ func ShouldExecute(schedule *apis.Schedule, state *apis.BackupState) bool {
 			return false
 		}
 	}
-	stopAt, _ := time.Parse("2006-01-02 15:04",
-		fmt.Sprintf("%s %s", now().Format("2006-01-02"), schedule.GetStopAt()))
-	return stopAt.Before(now())
+
+	var convertTime = func(f string) time.Time {
+		t, _ := time.Parse("2006-01-02 15:04",
+			fmt.Sprintf("%s %s", now().Format("2006-01-02"), f))
+		return t
+	}
+
+	stopAt := convertTime(schedule.GetStopAt())
+	startAt := convertTime(schedule.GetStartAt())
+	if pause {
+		return stopAt.Before(now()) && now().Before(startAt.Add(24*time.Hour))
+	}
+	return startAt.Before(now()) && now().Before(stopAt.Add(24*time.Hour))
 }
 
 func ReadBackupState(path string) *apis.BackupState {
@@ -93,6 +103,14 @@ func ValidateConfig(cfg *apis.Config) error {
 			return errors.Errorf("duplicate id %q", id)
 		} else {
 			ids.Insert(id)
+		}
+
+		for i, r := range s.GetResources() {
+			if c := r.GetCluster(); c != nil {
+				if c.GetName() == "" || c.GetLocation() == "" {
+					return errors.Errorf("cluster[%d].name(%s) and cluster[%d].location(%s) is required", i, c.GetName(), i, c.GetLocation())
+				}
+			}
 		}
 	}
 	return nil

@@ -1,8 +1,10 @@
 package unpause
 
 import (
+	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"github.com/vietanhduong/pause-gcp/cmd/utils"
+	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
 	"log"
 	"os"
@@ -51,24 +53,73 @@ func run(runCfg runConfig) error {
 			t := time.Now()
 			log.Printf("INFO: prepare to execute backup(project=%s)...\n", state.GetProject())
 			defer func() { log.Printf("INFO: execute backup(project=%s) completed (took=%v)!\n", state.GetProject(), time.Since(t)) }()
-			if err := execute(state, runCfg.force || removed); err != nil {
+			newState, err := execute(state, runCfg.force || removed)
+			if err != nil {
 				log.Printf("WARN: execute backup(project=%s) got error: %v\n", state.GetProject(), err)
-			} else {
-				if removed {
-					_ = os.Remove(path)
-				}
+				_ = utils.WriteBackupState(backupDir, newState)
+				return
 			}
+
+			// skip execute
+			if len(newState.GetPausedResources()) > 0 {
+				return
+			}
+
+			// if the unpause process complete, we can remove the state file
+			_ = os.Remove(path)
 		}(state)
 	}
 	wg.Wait()
 	return nil
 }
 
-func execute(state *apis.BackupState, force bool) error {
-	if !utils.ShouldExecute(state.GetSchedule(), nil) && !force {
-		return nil
+func execute(state *apis.BackupState, force bool) (*apis.BackupState, error) {
+	if !utils.ShouldExecute(false, state.GetSchedule(), nil) && !force {
+		return state, nil
 	}
-	return nil
+
+	var wg sync.WaitGroup
+	wg.Add(len(state.PausedResources))
+	for i, pr := range state.GetPausedResources() {
+		go func(i int, pr *apis.Resource) {
+			defer wg.Done()
+
+			switch r := pr.GetSpecifier().(type) {
+			case *apis.Resource_Cluster:
+				if err := unpauseCluster(r.Cluster); err != nil {
+					log.Printf("WARN: unpause cluster '%s/%s' got error: %v", r.Cluster.GetLocation(), r.Cluster.GetName(), err)
+				} else {
+					state.PausedResources[i] = nil
+				}
+			case *apis.Resource_Sql:
+			case *apis.Resource_Vm:
+			}
+		}(i, pr)
+
+	}
+	wg.Wait()
+
+	var pausedResources []*apis.Resource
+	for _, r := range state.GetPausedResources() {
+		if r != nil {
+			pausedResources = append(pausedResources, r)
+		}
+	}
+
+	state.PausedResources = pausedResources
+	if len(pausedResources) > 0 {
+		return state, errors.Errorf("unpause incomplete (%s resources left)", len(pausedResources))
+	}
+	return state, nil
+}
+
+func unpauseCluster(c *apis.Cluster) error {
+	t := time.Now()
+	log.Printf("INFO: prepare to unpause cluster '%s/%s'...", c.GetLocation(), c.GetName())
+	defer func() { log.Printf("INFO: unpause cluster '%s/%s' complete (took=%v)!", c.GetLocation(), c.GetName(), time.Since(t)) }()
+
+	client := gke.NewClient()
+	return client.UnpauseCluster(c)
 }
 
 func getBackupStateFiles(dir string) ([]string, error) {

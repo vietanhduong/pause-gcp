@@ -11,11 +11,7 @@ message Resource {
     Sql sql = 2;
     Vm vm = 3;
   }
-
-  oneof time_specifier {
-    google.protobuf.Timestamp paused_at = 4;
-    google.protobuf.Timestamp unpaused_at = 5;
-  }
+  google.protobuf.Timestamp paused_at = 4;
 }
 
 message Cluster {

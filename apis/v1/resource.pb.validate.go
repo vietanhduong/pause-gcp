@@ -57,6 +57,35 @@ func (m *Resource) validate(all bool) error {
 
 	var errors []error
 
+	if all {
+		switch v := interface{}(m.GetPausedAt()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, ResourceValidationError{
+					field:  "PausedAt",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, ResourceValidationError{
+					field:  "PausedAt",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetPausedAt()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return ResourceValidationError{
+				field:  "PausedAt",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
 	switch v := m.Specifier.(type) {
 	case *Resource_Cluster:
 		if v == nil {
@@ -175,92 +204,6 @@ func (m *Resource) validate(all bool) error {
 			if err := v.Validate(); err != nil {
 				return ResourceValidationError{
 					field:  "Vm",
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	default:
-		_ = v // ensures v is used
-	}
-	switch v := m.TimeSpecifier.(type) {
-	case *Resource_PausedAt:
-		if v == nil {
-			err := ResourceValidationError{
-				field:  "TimeSpecifier",
-				reason: "oneof value cannot be a typed-nil",
-			}
-			if !all {
-				return err
-			}
-			errors = append(errors, err)
-		}
-
-		if all {
-			switch v := interface{}(m.GetPausedAt()).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, ResourceValidationError{
-						field:  "PausedAt",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, ResourceValidationError{
-						field:  "PausedAt",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(m.GetPausedAt()).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return ResourceValidationError{
-					field:  "PausedAt",
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	case *Resource_UnpausedAt:
-		if v == nil {
-			err := ResourceValidationError{
-				field:  "TimeSpecifier",
-				reason: "oneof value cannot be a typed-nil",
-			}
-			if !all {
-				return err
-			}
-			errors = append(errors, err)
-		}
-
-		if all {
-			switch v := interface{}(m.GetUnpausedAt()).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, ResourceValidationError{
-						field:  "UnpausedAt",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, ResourceValidationError{
-						field:  "UnpausedAt",
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(m.GetUnpausedAt()).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return ResourceValidationError{
-					field:  "UnpausedAt",
 					reason: "embedded message failed validation",
 					cause:  err,
 				}

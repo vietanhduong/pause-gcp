@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"github.com/stretchr/testify/assert"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"testing"
@@ -11,6 +10,7 @@ import (
 func Test_shouldExecute(t *testing.T) {
 	var tests = []struct {
 		name     string
+		pause    bool
 		time     func() time.Time
 		schedule func() *apis.Schedule
 		backup   func() *apis.BackupState
@@ -20,9 +20,15 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: no repeat setup and no backup, expect true",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 				}
 			},
+			time: func() time.Time {
+				mt, _ := time.Parse("2006-01-02 15:04:05", "2023-05-22 21:00:00")
+				return mt
+			},
+			pause: true,
 			backup: func() *apis.BackupState {
 				return nil
 			},
@@ -32,9 +38,15 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: no repeat setup and backup existed, expect false",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 				}
 			},
+			time: func() time.Time {
+				mt, _ := time.Parse("2006-01-02 15:04:05", "2023-05-22 21:00:00")
+				return mt
+			},
+			pause: true,
 			backup: func() *apis.BackupState {
 				return &apis.BackupState{}
 			},
@@ -44,7 +56,8 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: repeat on weekdays, expect true",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 					Repeat: &apis.Repeat{
 						Specifier: &apis.Repeat_WeekDays{WeekDays: true},
 					},
@@ -61,7 +74,8 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: repeat on weekdays, but today is saturday, expect false",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 					Repeat: &apis.Repeat{
 						Specifier: &apis.Repeat_WeekDays{WeekDays: true},
 					},
@@ -78,7 +92,8 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: repeat on weekends, expect true",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "12:00",
+					StartAt: "08:00",
 					Repeat: &apis.Repeat{
 						Specifier: &apis.Repeat_Weekends{Weekends: true},
 					},
@@ -86,7 +101,7 @@ func Test_shouldExecute(t *testing.T) {
 			},
 			backup: func() *apis.BackupState { return nil },
 			time: func() time.Time {
-				mt, _ := time.Parse("2006-01-02 15:04:05", "2023-05-27 12:00:00")
+				mt, _ := time.Parse("2006-01-02 15:04:05", "2023-05-27 14:00:00")
 				return mt
 			},
 			expected: true,
@@ -95,7 +110,8 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: repeat on weekends, but today is monday, expect false",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 					Repeat: &apis.Repeat{
 						Specifier: &apis.Repeat_Weekends{Weekends: true},
 					},
@@ -112,7 +128,8 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: repeat on monday, expect false",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 					Repeat: &apis.Repeat{
 						Specifier: &apis.Repeat_Other_{
 							Other: &apis.Repeat_Other{Days: []apis.Repeat_Day{apis.Repeat_MONDAY}},
@@ -131,7 +148,8 @@ func Test_shouldExecute(t *testing.T) {
 			name: "TEST SUCCESS: repeat on monday, but today is tuesday, expect false",
 			schedule: func() *apis.Schedule {
 				return &apis.Schedule{
-					StopAt: fmt.Sprintf("%s:00", time.Now().Add(-1*time.Hour).Format("hh")),
+					StopAt:  "20:00",
+					StartAt: "08:00",
 					Repeat: &apis.Repeat{
 						Specifier: &apis.Repeat_Other_{
 							Other: &apis.Repeat_Other{Days: []apis.Repeat_Day{apis.Repeat_MONDAY}},
@@ -155,7 +173,7 @@ func Test_shouldExecute(t *testing.T) {
 			} else {
 				now = tt.time
 			}
-			actual := ShouldExecute(tt.schedule(), tt.backup())
+			actual := ShouldExecute(tt.pause, tt.schedule(), tt.backup())
 			assert.Equal(t, tt.expected, actual)
 		})
 	}

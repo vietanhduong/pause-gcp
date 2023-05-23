@@ -13,7 +13,6 @@ message Config {
 message BackupState {
   string project = 1;
   repeated apis.v1.Resource paused_resources = 2;
-  repeated apis.v1.Resource unpaused_resources = 3;
   map<string, string> metadata = 4;
   bool dry_run = 5;
   Schedule schedule = 6;
@@ -24,7 +23,7 @@ message Schedule {
   string stop_at = 2 [(validate.rules).string.pattern = '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'];
   string start_at = 3 [(validate.rules).string.pattern = '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'];
   Repeat repeat = 4;
-  repeated apis.v1.Resource except = 5;
+  repeated apis.v1.Resource resources = 5;
 }
 
 message Repeat {

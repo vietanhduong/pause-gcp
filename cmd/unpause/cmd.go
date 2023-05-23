@@ -28,6 +28,7 @@ This command require a config file to detect the backup state folder. If there i
 	}
 
 	cmd.Flags().StringVarP(&runCfg.configFile, "config", "c", "", "Pause GCP's config file. The input file must be one of `yaml` or `json` format.")
+	cmd.Flags().BoolVar(&runCfg.force, "force", false, "Force unpause GCP resources even it's not in a schedule.")
 	return cmd
 }
 

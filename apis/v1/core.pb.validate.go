@@ -225,40 +225,6 @@ func (m *BackupState) validate(all bool) error {
 
 	}
 
-	for idx, item := range m.GetUnpausedResources() {
-		_, _ = idx, item
-
-		if all {
-			switch v := interface{}(item).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, BackupStateValidationError{
-						field:  fmt.Sprintf("UnpausedResources[%v]", idx),
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, BackupStateValidationError{
-						field:  fmt.Sprintf("UnpausedResources[%v]", idx),
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return BackupStateValidationError{
-					field:  fmt.Sprintf("UnpausedResources[%v]", idx),
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	}
-
 	// no validation rules for Metadata
 
 	// no validation rules for DryRun
@@ -453,7 +419,7 @@ func (m *Schedule) validate(all bool) error {
 		}
 	}
 
-	for idx, item := range m.GetExcept() {
+	for idx, item := range m.GetResources() {
 		_, _ = idx, item
 
 		if all {
@@ -461,7 +427,7 @@ func (m *Schedule) validate(all bool) error {
 			case interface{ ValidateAll() error }:
 				if err := v.ValidateAll(); err != nil {
 					errors = append(errors, ScheduleValidationError{
-						field:  fmt.Sprintf("Except[%v]", idx),
+						field:  fmt.Sprintf("Resources[%v]", idx),
 						reason: "embedded message failed validation",
 						cause:  err,
 					})
@@ -469,7 +435,7 @@ func (m *Schedule) validate(all bool) error {
 			case interface{ Validate() error }:
 				if err := v.Validate(); err != nil {
 					errors = append(errors, ScheduleValidationError{
-						field:  fmt.Sprintf("Except[%v]", idx),
+						field:  fmt.Sprintf("Resources[%v]", idx),
 						reason: "embedded message failed validation",
 						cause:  err,
 					})
@@ -478,7 +444,7 @@ func (m *Schedule) validate(all bool) error {
 		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
 			if err := v.Validate(); err != nil {
 				return ScheduleValidationError{
-					field:  fmt.Sprintf("Except[%v]", idx),
+					field:  fmt.Sprintf("Resources[%v]", idx),
 					reason: "embedded message failed validation",
 					cause:  err,
 				}

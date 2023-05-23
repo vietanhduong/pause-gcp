@@ -1,10 +1,11 @@
 package pause
 
 import (
+	"fmt"
+	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"github.com/vietanhduong/pause-gcp/cmd/utils"
 	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"path/filepath"
@@ -51,7 +52,7 @@ func run(runCfg runConfig) error {
 
 func execute(schedule *apis.Schedule, cfg runConfig) error {
 	state := utils.ReadBackupState(utils.BuildBackupStateFilename(cfg.configDir, schedule))
-	if !utils.ShouldExecute(schedule, state) && !cfg.force {
+	if !utils.ShouldExecute(true, schedule, state) && !cfg.force {
 		return nil
 	}
 
@@ -62,7 +63,7 @@ func execute(schedule *apis.Schedule, cfg runConfig) error {
 	}
 
 	// pause clusters
-	clusters, err := pauseCluster(schedule, state, cfg)
+	clusters, err := pauseCluster(schedule, cfg)
 	if err != nil {
 		return err
 	}
@@ -76,35 +77,55 @@ func execute(schedule *apis.Schedule, cfg runConfig) error {
 	return utils.WriteBackupState(cfg.configDir, newState)
 }
 
-func pauseCluster(schedule *apis.Schedule, state *apis.BackupState, cfg runConfig) ([]*apis.Resource, error) {
-	var skip bool
-	for _, e := range schedule.GetExcept() {
-		if c := e.GetCluster(); c == (&apis.Cluster{}) {
-			skip = true
-			break
-		}
-	}
-
-	if skip {
-		log.Printf("INFO: ignore GKE resource!\n")
-		return nil, nil
-	}
-
+func pauseCluster(schedule *apis.Schedule, cfg runConfig) ([]*apis.Resource, error) {
 	client := gke.NewClient()
 	clusters, err := client.ListClusters(schedule.GetProject())
 	if err != nil {
 		return nil, err
 	}
 
-	tmp := make([]*apis.Resource, len(clusters))
-	var wg sync.WaitGroup
-	wg.Add(len(clusters))
-	for i, c := range clusters {
-		// ensure that the cluster presents is paused or not (the state). If not, we should pause it.
-		if isClusterPaused(c, schedule) {
-			continue
-		}
+	currentClusters := make(map[string]*apis.Cluster)
+	for _, c := range clusters {
+		currentClusters[fmt.Sprintf("%s/%s", c.GetLocation(), c.GetName())] = c
+	}
 
+	var pauseClusters []*apis.Cluster
+
+	for _, r := range schedule.GetResources() {
+		if pc := r.GetCluster(); pc != nil {
+			if c, ok := currentClusters[fmt.Sprintf("%s/%s", pc.GetLocation(), pc.GetName())]; !ok {
+				return nil, errors.Errorf("cluster '%s/%s' not found!", pc.GetLocation(), pc.GetName())
+			} else {
+				// if no pool is specified, we implicitly select all existing pools.
+				if len(pc.GetNodePools()) == 0 {
+					pauseClusters = append(pauseClusters, c)
+					continue
+				}
+
+				var pausePools []*apis.Cluster_NodePool
+				pools := make(map[string]*apis.Cluster_NodePool)
+				for _, p := range c.GetNodePools() {
+					pools[p.GetName()] = p
+				}
+
+				for _, pp := range pc.GetNodePools() {
+					if p, ok := pools[pp.GetName()]; !ok {
+						return nil, errors.Errorf("not found pool '%s' in cluster '%s/%s'", pp.GetName(), pc.GetLocation(), pc.GetName())
+					} else {
+						pausePools = append(pausePools, p)
+					}
+				}
+				c = c.DeepCopy()
+				c.NodePools = pausePools
+				pauseClusters = append(pauseClusters, c)
+			}
+		}
+	}
+
+	tmp := make([]*apis.Resource, len(pauseClusters))
+	var wg sync.WaitGroup
+	wg.Add(len(pauseClusters))
+	for i, c := range pauseClusters {
 		go func(i int, c *apis.Cluster) {
 			defer wg.Done()
 			t := time.Now()
@@ -113,13 +134,13 @@ func pauseCluster(schedule *apis.Schedule, state *apis.BackupState, cfg runConfi
 
 			var cluster *apis.Cluster
 			var err error
-			if cluster, err = client.PauseCluster(c, schedule.GetExcept(), cfg.dryRun); err != nil {
+			if cluster, err = client.PauseCluster(c, cfg.dryRun); err != nil {
 				log.Printf("WARN: pause cluster '%s/%s' got error: %v", c.GetLocation(), c.GetName(), err)
 				return
 			}
 			tmp[i] = &apis.Resource{
-				Specifier:     &apis.Resource_Cluster{Cluster: cluster},
-				TimeSpecifier: &apis.Resource_PausedAt{PausedAt: timestamppb.New(time.Now())},
+				Specifier: &apis.Resource_Cluster{Cluster: cluster},
+				PausedAt:  timestamppb.New(time.Now()),
 			}
 		}(i, c)
 	}
@@ -131,33 +152,6 @@ func pauseCluster(schedule *apis.Schedule, state *apis.BackupState, cfg runConfi
 		}
 	}
 	return out, nil
-}
-
-// isClusterPaused ensure that if all node pools of the input cluster is paused. If a single node pool is not paused,
-// this still return true. PauseCluster function will do nothing if the node pool has size 0
-func isClusterPaused(cluster *apis.Cluster, schedule *apis.Schedule) bool {
-	exceptPools := sets.New[string]()
-
-	for _, e := range schedule.GetExcept() {
-		if exceptCluster := e.GetCluster(); exceptCluster != nil && exceptCluster.GetName() == cluster.GetName() {
-			if exceptCluster.GetLocation() != "" && exceptCluster.GetLocation() != cluster.GetLocation() {
-				continue
-			}
-			for _, p := range exceptCluster.GetNodePools() {
-				exceptPools.Insert(p.GetName())
-			}
-			break
-		}
-	}
-
-	for _, p := range cluster.GetNodePools() {
-		// if a pool is not contained in the except pool, but it's current size > 0 then we should pause it.
-		if !exceptPools.Contains(p.GetName()) && p.GetCurrentSize() > 0 {
-			return false
-		}
-	}
-
-	return false
 }
 
 func pauseVm(schedule *apis.Schedule) ([]*apis.Vm, error) {
