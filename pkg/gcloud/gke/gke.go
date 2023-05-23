@@ -18,23 +18,7 @@ import (
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
-type Client struct{}
-
-type Interface interface {
-	ListClusters(project string) ([]*apis.Cluster, error)
-	GetCluster(project, location, name string) (*apis.Cluster, error)
-	PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster, error)
-	UnpauseCluster(cluster *apis.Cluster) error
-}
-
-var _ Interface = (*Client)(nil)
-
-func NewClient() *Client {
-	client := &Client{}
-	return client
-}
-
-func (c *Client) ListClusters(project string) ([]*apis.Cluster, error) {
+func ListClusters(project string) ([]*apis.Cluster, error) {
 	raw, err := exec.Run(exec.Command("gcloud", "container", "clusters", "list", "--project", project, "--format", "json"))
 	if err != nil {
 		return nil, errors.Wrapf(err, "list clusters")
@@ -90,7 +74,7 @@ func (c *Client) ListClusters(project string) ([]*apis.Cluster, error) {
 	return out, nil
 }
 
-func (c *Client) GetCluster(project, location, name string) (*apis.Cluster, error) {
+func GetCluster(project, location, name string) (*apis.Cluster, error) {
 	raw, err := exec.Run(exec.Command("gcloud",
 		"container",
 		"clusters",
@@ -137,7 +121,7 @@ func (c *Client) GetCluster(project, location, name string) (*apis.Cluster, erro
 	return out, nil
 }
 
-func (c *Client) PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster, error) {
+func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
 	var resize = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
@@ -217,20 +201,20 @@ func (c *Client) PauseCluster(cluster *apis.Cluster, dryRun bool) (*apis.Cluster
 	defer func() {
 		if err != nil {
 			log.Printf("INFO: error detected, prepare to rollback cluster '%s/%s'.", cluster.GetLocation(), cluster.GetName())
-			_ = c.UnpauseCluster(cluster)
+			_ = UnpauseCluster(cluster)
 		}
 	}()
 
 	for _, p := range cluster.NodePools {
 		if err = pause(cluster, p); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	return cluster, nil
+	return nil
 }
 
-func (c *Client) UnpauseCluster(cluster *apis.Cluster) error {
+func UnpauseCluster(cluster *apis.Cluster) error {
 	var unpause = func(cluster *apis.Cluster, p *apis.Cluster_NodePool) error {
 		if p.GetAutoscaling() != nil && p.GetAutoscaling().GetEnabled() {
 			_, err := exec.Run(exec.Command("gcloud",

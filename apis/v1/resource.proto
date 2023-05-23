@@ -42,9 +42,14 @@ message Cluster {
 
 message Sql {
   string name = 1;
+  string project = 2;
+  string location = 3;
+  string state = 4;
 }
 
 message Vm {
   string name = 1;
   string zone = 2;
+  string state = 3;
+  string project = 4;
 }

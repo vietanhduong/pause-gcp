@@ -25,3 +25,4 @@ go.work
 
 .idea/
 .backup-state/
+*.state.json

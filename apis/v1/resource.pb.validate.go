@@ -452,6 +452,12 @@ func (m *Sql) validate(all bool) error {
 
 	// no validation rules for Name
 
+	// no validation rules for Project
+
+	// no validation rules for Location
+
+	// no validation rules for State
+
 	if len(errors) > 0 {
 		return SqlMultiError(errors)
 	}
@@ -553,6 +559,10 @@ func (m *Vm) validate(all bool) error {
 	// no validation rules for Name
 
 	// no validation rules for Zone
+
+	// no validation rules for State
+
+	// no validation rules for Project
 
 	if len(errors) > 0 {
 		return VmMultiError(errors)

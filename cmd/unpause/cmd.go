@@ -2,39 +2,16 @@ package unpause
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/vietanhduong/pause-gcp/cmd/utils"
-	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
+	"github.com/vietanhduong/pause-gcp/cmd/unpause/gke"
 )
 
 func NewCommand() *cobra.Command {
-	var (
-		runCfg runConfig
-	)
-
 	var cmd = &cobra.Command{
 		Use:   "unpause",
 		Short: "Unpause GCP resources",
-		Long: `Unpause GCP resources.
-This command require a config file to detect the backup state folder. If there is no backup state found, no resource is unpause.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := utils.RequiredFlags(cmd, "config"); err != nil {
-				return err
-			}
-			if err := testGcloud(); err != nil {
-				return err
-			}
-			runCfg.gkeClient = gke.NewClient()
-			return run(runCfg)
-		},
+		Long:  `Unpause GCP resources.`,
 	}
 
-	cmd.Flags().StringVarP(&runCfg.configFile, "config", "c", "", "Pause GCP's config file. The input file must be one of `yaml` or `json` format.")
-	cmd.Flags().BoolVar(&runCfg.force, "force", false, "Force unpause GCP resources even it's not in a schedule.")
+	cmd.AddCommand(gke.NewCommand())
 	return cmd
-}
-
-func testGcloud() error {
-	_, err := exec.Run(exec.Command("which", "gcloud"))
-	return err
 }
