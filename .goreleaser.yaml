@@ -3,10 +3,9 @@ build:
   main: ./cmd
   ldflags:
     - -s -w -X github.com/vietanhduong/pause-gcp/pkg/config/version.Version={{.Version}} -X github.com/vietanhduong/pause-gcp/pkg/config/version.GitCommit={{.Commit}} -X github.com/vietanhduong/pause-gcp/pkg/config/version.BuildDate={{.Date}}
-  goarch:
-    - amd64
-    - arm
-    - arm64
+  goos:
+    - darwin
+    - linux
 changelog:
   skip: false
   use: git
