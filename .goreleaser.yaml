@@ -1,0 +1,31 @@
+project_name: pause-gcp
+build:
+  main: ./cmd
+  ldflags:
+    - -s -w -X github.com/vietanhduong/pause-gcp/pkg/config/version.Version={{.Version}} -X github.com/vietanhduong/pause-gcp/pkg/config/version.GitCommit={{.Commit}} -X github.com/vietanhduong/pause-gcp/pkg/config/version.BuildDate={{.Date}}
+  goarch:
+    - amd64
+    - arm
+    - arm64
+changelog:
+  skip: false
+  use: git
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+release:
+  name_template: "{{.Tag}}"
+archives:
+  - files:
+      - LICENSE
+      - README.md
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}"
