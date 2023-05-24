@@ -1,4 +1,4 @@
-package gke
+package pause
 
 import (
 	"fmt"
@@ -45,12 +45,15 @@ func run(cfg runConfig) error {
 	_, _ = fmt.Fprintf(os.Stdout, "%s\n", b)
 	log.Printf("Recommend: please keep this information. You can use it to restore (unpause) your cluster.")
 
-	_ = os.MkdirAll(cfg.outputDir, 0755)
-	dst := path.Join(cfg.outputDir, fmt.Sprintf("gke_%s_%s_%s.state.json", cfg.project, cfg.location, cfg.clusterName))
-	if err = os.WriteFile(dst, b, 0644); err != nil {
-		return err
-	}
+	if cfg.outputDir != "" {
+		_ = os.MkdirAll(cfg.outputDir, 0755)
+		dst := path.Join(cfg.outputDir, fmt.Sprintf("gke_%s_%s_%s.state.json", cfg.project, cfg.location, cfg.clusterName))
+		if err = os.WriteFile(dst, b, 0644); err != nil {
+			return err
+		}
 
-	log.Printf("INFO: Cluster's state has been written to %q", dst)
+		log.Printf("INFO: Cluster's state has been written to %q", dst)
+	}
+	log.Printf("INFO: cluster %q has been paused!", cluster.GetName())
 	return nil
 }

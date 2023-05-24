@@ -32,6 +32,8 @@ message Cluster {
     int32 initial_node_count = 4;
     int32 current_size = 5;
     AutoScaling autoscaling = 6;
+    bool spot = 7;
+    bool preemptible = 8;
   }
 
   string project = 1;
@@ -43,8 +45,10 @@ message Cluster {
 message Sql {
   string name = 1;
   string project = 2;
-  string location = 3;
-  string state = 4;
+  string region = 3;
+  string gce_zone = 4;
+  string state = 5;
+  string database_version = 6;
 }
 
 message Vm {

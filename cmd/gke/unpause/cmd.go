@@ -1,4 +1,4 @@
-package gke
+package unpause
 
 import (
 	"github.com/pkg/errors"
@@ -15,7 +15,7 @@ func NewCommand() *cobra.Command {
 	)
 
 	var cmd = &cobra.Command{
-		Use:   "gke [STATE_FILE]",
+		Use:   "unpause [STATE_FILE]",
 		Short: "Unpause a GKE cluster",
 		Long: `Unpause a GKE cluster.
 This command requires a GKE state file which is created when you pause the cluster.`,

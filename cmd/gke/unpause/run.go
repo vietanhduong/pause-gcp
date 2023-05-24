@@ -1,4 +1,4 @@
-package gke
+package unpause
 
 import (
 	"github.com/pkg/errors"
@@ -22,6 +22,6 @@ func run(cfg runConfig) error {
 	if err = gke.UnpauseCluster(cfg.cluster); err != nil {
 		return err
 	}
-	log.Printf("INFO: cluster '%s' is unpaused!", cfg.cluster.GetName())
+	log.Printf("INFO: cluster '%s' is running now!", cfg.cluster.GetName())
 	return nil
 }

@@ -20,7 +20,7 @@ func GetInstance(project, zone, name string) (*apis.Vm, error) {
 		"--zone", zone,
 		"--format", "json"))
 	if err != nil {
-		if strings.Contains(err.Error(), fmt.Sprintf("No instance named '%s' in %s.", name, project)) {
+		if strings.Contains(err.Error(), fmt.Sprintf("%s' was not found", name)) {
 			return nil, nil
 		}
 		return nil, errors.Wrapf(err, "get instance")

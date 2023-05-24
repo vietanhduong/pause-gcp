@@ -454,9 +454,13 @@ func (m *Sql) validate(all bool) error {
 
 	// no validation rules for Project
 
-	// no validation rules for Location
+	// no validation rules for Region
+
+	// no validation rules for GceZone
 
 	// no validation rules for State
+
+	// no validation rules for DatabaseVersion
 
 	if len(errors) > 0 {
 		return SqlMultiError(errors)
@@ -697,6 +701,10 @@ func (m *Cluster_NodePool) validate(all bool) error {
 			}
 		}
 	}
+
+	// no validation rules for Spot
+
+	// no validation rules for Preemptible
 
 	if len(errors) > 0 {
 		return Cluster_NodePoolMultiError(errors)

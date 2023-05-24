@@ -50,6 +50,8 @@ func ListClusters(project string) ([]*apis.Cluster, error) {
 				Locations:        p.GetLocations(),
 				InitialNodeCount: p.GetInitialNodeCount(),
 				CurrentSize:      int32(getNodePoolSize(project, e.Name, p.Name)),
+				Spot:             p.GetConfig().GetSpot(),
+				Preemptible:      p.GetConfig().GetPreemptible(),
 			}
 			if a := p.GetAutoscaling(); a != nil {
 				out[i].NodePools[j].Autoscaling = &apis.Cluster_NodePool_AutoScaling{
@@ -105,6 +107,8 @@ func GetCluster(project, location, name string) (*apis.Cluster, error) {
 			Locations:        p.GetLocations(),
 			InitialNodeCount: p.GetInitialNodeCount(),
 			CurrentSize:      int32(getNodePoolSize(project, cluster.Name, p.Name)),
+			Spot:             p.GetConfig().GetSpot(),
+			Preemptible:      p.GetConfig().GetPreemptible(),
 		}
 		if a := p.GetAutoscaling(); a != nil {
 			out.NodePools[i].Autoscaling = &apis.Cluster_NodePool_AutoScaling{
@@ -259,6 +263,87 @@ func UnpauseCluster(cluster *apis.Cluster) error {
 	}
 	log.Printf("INFO: unpause cluster '%s' is completed!\n", cluster.Name)
 	return nil
+}
+
+type instanceGroup struct {
+	Name      string `json:"name,omitempty"`
+	Zone      string `json:"zone,omitempty"`
+	Region    string `json:"region,omitempty"`
+	IsManaged string `json:"isManaged,omitempty"`
+}
+
+func RefreshCluster(cluster *apis.Cluster) error {
+	var refresh = func(project string, ig instanceGroup) error {
+		if ig.IsManaged != "Yes" {
+			log.Printf("INFO: instance group %s has been ignored becase it's not managed\n", ig.Name)
+			return nil
+		}
+		var locationFlag = "--zone"
+		var location = ig.Zone
+		if ig.Region != "" {
+			locationFlag = "--region"
+			location = ig.Region
+		}
+
+		_, err := exec.Run(exec.Command("gcloud",
+			"compute",
+			"instance-groups",
+			"managed",
+			"rolling-action",
+			"replace",
+			ig.Name,
+			"--project", project,
+			locationFlag, location,
+			"--replacement-method", "recreate",
+			"--max-surge", "0",
+			"--max-unavailable", "1"))
+		if err != nil {
+			log.Printf("WARN: refresh instance group %q got error: %v\n", ig.Name, err)
+			return err
+		}
+		return nil
+	}
+
+	var execute = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
+		log.Printf("INFO: prepare to refresh pool %s...\n", pool.GetName())
+		defer log.Printf("INFO: refresh pool %s completed!\n", pool.GetName())
+		if !pool.GetPreemptible() && !pool.GetSpot() {
+			log.Printf("INFO: pool %q has been ignored because this pool is on-demand pool.", pool.GetName())
+			return nil
+		}
+		raw, err := exec.Run(exec.Command("gcloud",
+			"compute",
+			"instance-groups",
+			"list",
+			"--project", cluster.GetProject(),
+			"--filter", fmt.Sprintf("name:gke-%s-%s-*", cluster.GetName(), pool.GetName()),
+			"--format", "json(name, zone.basename(), region.basename(), isManaged)"))
+		if err != nil {
+			log.Printf("WARN: list instance group (cluster=%s, pool=%s) got error: %v\n", cluster.GetName(), pool.GetName(), err)
+			return err
+		}
+
+		var igs []instanceGroup
+		if err = json.UnmarshalFromString(raw, &igs); err != nil {
+			log.Printf("WARN: unmarshal instance groups (cluster=%s, pool=%s) got error: %v\n", cluster.GetName(), pool.GetName(), err)
+			return err
+		}
+
+		var eg errgroup.Group
+		for _, ig := range igs {
+			ig := ig
+			eg.Go(func() error { return refresh(cluster.GetProject(), ig) })
+		}
+
+		return eg.Wait()
+	}
+
+	var eg errgroup.Group
+	for _, p := range cluster.GetNodePools() {
+		p := p
+		eg.Go(func() error { return execute(cluster, p) })
+	}
+	return eg.Wait()
 }
 
 func getNodePoolSize(project, cluster, pool string) int {
