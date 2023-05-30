@@ -12,7 +12,7 @@ func NewCommand() *cobra.Command {
 	)
 
 	var cmd = &cobra.Command{
-		Use:   "vm [INSTANCE_NAME]",
+		Use:   "unpause [INSTANCE_NAME]",
 		Short: "Unpause a Virtual Machine",
 		Long: `Unpause a Virtual Machine. 
 This command require '--zone' and '--project' flags.`,
