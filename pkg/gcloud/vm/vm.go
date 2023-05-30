@@ -69,10 +69,15 @@ func StartInstance(vm *apis.Vm) error {
 	if vm.GetState() != "TERMINATED" && vm.GetState() != "SUSPENDED" {
 		return errors.Errorf("instance is incorrect state (%s)", vm.GetState())
 	}
+
+	var cmd = "start"
+	if vm.GetState() == "SUSPENDED" {
+		cmd = "resume"
+	}
 	_, err := exec.Run(exec.Command("gcloud",
 		"compute",
 		"instances",
-		"start", vm.GetName(),
+		cmd, vm.GetName(),
 		"--project", vm.GetProject(),
 		"--zone", vm.GetZone()))
 	return err
