@@ -33,5 +33,6 @@ This command require '--zone' and '--project' flags.`,
 
 	cmd.Flags().StringVarP(&runCfg.zone, "zone", "z", "asia-southeast1-b", "the instance's zone")
 	cmd.Flags().StringVarP(&runCfg.project, "project", "p", "", "the project where contain the instance")
+	cmd.Flags().BoolVar(&runCfg.terminate, "terminate", false, "terminate the instance or suspend otherwise")
 	return cmd
 }

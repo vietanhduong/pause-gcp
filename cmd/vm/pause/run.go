@@ -7,9 +7,10 @@ import (
 )
 
 type runConfig struct {
-	project string
-	zone    string
-	name    string
+	project   string
+	zone      string
+	name      string
+	terminate bool
 }
 
 func run(cfg runConfig) error {
@@ -21,7 +22,7 @@ func run(cfg runConfig) error {
 		return errors.Errorf("instance '%s/%s/%s' not found", cfg.project, cfg.zone, cfg.name)
 	}
 
-	if err = vm.StopInstance(instance, false); err != nil {
+	if err = vm.StopInstance(instance, cfg.terminate); err != nil {
 		return err
 	}
 	log.Printf("INFO: instance %s has been stopped!", instance.GetName())

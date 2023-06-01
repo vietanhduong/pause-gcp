@@ -10,6 +10,7 @@ type runConfig struct {
 	name     string
 	project  string
 	location string
+	recreate bool
 }
 
 func run(cfg runConfig) error {
@@ -20,7 +21,7 @@ func run(cfg runConfig) error {
 	if cluster == nil {
 		return errors.Errorf("cluster '%s/%s/%s' not found", cfg.project, cfg.location, cfg.name)
 	}
-	if err = gke.RefreshCluster(cluster); err != nil {
+	if err = gke.RefreshCluster(cluster, cfg.recreate); err != nil {
 		return err
 	}
 	log.Printf("INFO: cluster '%s' has been refreshed!", cfg.name)

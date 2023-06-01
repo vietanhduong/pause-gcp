@@ -272,7 +272,7 @@ type instanceGroup struct {
 	IsManaged string `json:"isManaged,omitempty"`
 }
 
-func RefreshCluster(cluster *apis.Cluster) error {
+func RefreshCluster(cluster *apis.Cluster, recreate bool) error {
 	var refresh = func(project string, ig instanceGroup) error {
 		if ig.IsManaged != "Yes" {
 			log.Printf("INFO: instance group %s has been ignored becase it's not managed\n", ig.Name)
@@ -285,6 +285,11 @@ func RefreshCluster(cluster *apis.Cluster) error {
 			location = ig.Region
 		}
 
+		var replaceMethod = "substitute"
+		if recreate {
+			replaceMethod = "recreate"
+		}
+
 		_, err := exec.Run(exec.Command("gcloud",
 			"compute",
 			"instance-groups",
@@ -294,7 +299,7 @@ func RefreshCluster(cluster *apis.Cluster) error {
 			ig.Name,
 			"--project", project,
 			locationFlag, location,
-			"--replacement-method", "recreate",
+			"--replacement-method", replaceMethod,
 			"--max-surge", "0",
 			"--max-unavailable", "1"))
 		if err != nil {
