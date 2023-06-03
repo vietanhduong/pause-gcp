@@ -10,7 +10,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"log"
 	"os"
-	"path"
 	"strings"
 )
 
@@ -48,9 +47,12 @@ func run(cfg runConfig) error {
 	log.Printf("Recommend: please keep this information. You can use it to restore (unpause) your cluster.")
 
 	if cfg.outputDir != "" {
-		dst := path.Join(cfg.outputDir, fmt.Sprintf("gke_%s_%s_%s.state.json", cfg.project, cfg.location, cfg.clusterName))
+		dst := fmt.Sprintf("%s/gke_%s_%s_%s.state.json", strings.TrimSuffix(cfg.outputDir, "/"), cfg.project, cfg.location, cfg.clusterName)
 		if strings.HasPrefix(strings.ToLower(cfg.outputDir), "gs://") {
-			_, err = exec.Run(exec.Command("gsutil", "-m", "cp", ""))
+			_, err = exec.Run(exec.Command("bash", "-c", fmt.Sprintf(`echo '%s' | gsutil cp -L /dev/null - %s`, string(b), dst)))
+			if err != nil {
+				return err
+			}
 		} else {
 			_ = os.MkdirAll(cfg.outputDir, 0755)
 			if err = os.WriteFile(dst, b, 0644); err != nil {
