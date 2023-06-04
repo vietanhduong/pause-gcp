@@ -40,7 +40,7 @@ Flags:
   -p, --project string                                            the project where contain the cluster
 ```
 
-This command will print the privous state of the input cluster after it is paused. This state is used to recover the cluster in the unpause command.
+This command will print the previous state of the input cluster after it is paused. This state is used to recover the cluster in the unpause command.
 
 If the `--output-dir` is a GCS bucket (start with `gs://`), this tool will push the state file to the destination directly.
 
