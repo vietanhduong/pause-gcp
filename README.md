@@ -70,6 +70,26 @@ Flags:
 ```
 The input file must be the previos state of a cluster. The input file can be a GCS url (with `gs://` prefix).
 
+### Refresh a GKE cluster
+
+```console
+$ pause-gcp gke refresh --help
+
+Refresh a GKE cluster.
+Refresh all worker nodes in all node pools of the input cluster. This command just works with node pool has type is spot or preemptible.
+
+Usage:
+  pause-gcp gke refresh [CLUSTER_NAME] [flags]
+
+Flags:
+  -h, --help              help for refresh
+  -l, --location string   the cluster location (default "asia-southeast1")
+  -p, --project string    the project where contain the cluster
+      --recreate          keep the instance (node) name or delete and create with new name otherwise
+```
+
+This command will refresh all node pools has type as `spot` or `preemptible`. This action will prevent GCP revokes your worker nodes during working hours.
+
 ## FAQ
 
 ### Why do I need this tool?
