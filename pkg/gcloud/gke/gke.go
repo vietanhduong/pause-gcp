@@ -1,8 +1,13 @@
 package gke
 
 import (
-	"cloud.google.com/go/container/apiv1/containerpb"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"time"
+
+	"cloud.google.com/go/container/apiv1/containerpb"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
@@ -10,10 +15,6 @@ import (
 	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
-	"log"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -36,7 +37,7 @@ func ListClusters(project string) ([]*apis.Cluster, error) {
 	}
 
 	out := make([]*apis.Cluster, len(clusters))
-	var convert = func(i int, e *containerpb.Cluster) error {
+	convert := func(i int, e *containerpb.Cluster) error {
 		out[i] = &apis.Cluster{
 			Project:  project,
 			Name:     e.GetName(),
@@ -126,7 +127,7 @@ func GetCluster(project, location, name string) (*apis.Cluster, error) {
 }
 
 func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
-	var resize = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
+	resize := func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		_, err := exec.Run(exec.Command("gcloud",
 			"container",
 			"clusters",
@@ -143,7 +144,7 @@ func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
 		return nil
 	}
 
-	var pause = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
+	pause := func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		if pool.GetAutoscaling() != nil || pool.GetAutoscaling().GetEnabled() {
 			_, err := exec.Run(exec.Command("gcloud",
 				"container",
@@ -204,6 +205,7 @@ func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
 	var err error
 	defer func() {
 		if err != nil {
+			log.Printf("WARN: pause cluster '%s/%s' failed: %v\n", cluster.GetLocation(), cluster.GetName(), err)
 			log.Printf("INFO: error detected, prepare to rollback cluster '%s/%s'.", cluster.GetLocation(), cluster.GetName())
 			_ = UnpauseCluster(cluster)
 		}
@@ -219,7 +221,7 @@ func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
 }
 
 func UnpauseCluster(cluster *apis.Cluster) error {
-	var unpause = func(cluster *apis.Cluster, p *apis.Cluster_NodePool) error {
+	unpause := func(cluster *apis.Cluster, p *apis.Cluster_NodePool) error {
 		if p.GetAutoscaling() != nil && p.GetAutoscaling().GetEnabled() {
 			_, err := exec.Run(exec.Command("gcloud",
 				"container",
@@ -273,19 +275,19 @@ type instanceGroup struct {
 }
 
 func RefreshCluster(cluster *apis.Cluster, recreate bool) error {
-	var refresh = func(project string, ig instanceGroup) error {
+	refresh := func(project string, ig instanceGroup) error {
 		if ig.IsManaged != "Yes" {
 			log.Printf("INFO: instance group %s has been ignored becase it's not managed\n", ig.Name)
 			return nil
 		}
-		var locationFlag = "--zone"
-		var location = ig.Zone
+		locationFlag := "--zone"
+		location := ig.Zone
 		if ig.Region != "" {
 			locationFlag = "--region"
 			location = ig.Region
 		}
 
-		var replaceMethod = "substitute"
+		replaceMethod := "substitute"
 		if recreate {
 			replaceMethod = "recreate"
 		}
@@ -309,7 +311,7 @@ func RefreshCluster(cluster *apis.Cluster, recreate bool) error {
 		return nil
 	}
 
-	var execute = func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
+	execute := func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		log.Printf("INFO: prepare to refresh pool %s...\n", pool.GetName())
 		defer log.Printf("INFO: refresh pool %s completed!\n", pool.GetName())
 		if !pool.GetPreemptible() && !pool.GetSpot() {
@@ -360,7 +362,6 @@ func getNodePoolSize(project, cluster, pool string) int {
 		"--project", project,
 		"--format", "value(size)",
 	))
-
 	if err != nil {
 		log.Printf("WARN: get pool size of '%s/%s' got error: %v\n", cluster, pool, err)
 		return 0
