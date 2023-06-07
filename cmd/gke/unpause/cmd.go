@@ -18,7 +18,7 @@ func NewCommand() *cobra.Command {
 		rm     bool
 	)
 
-	var cmd = &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "unpause [STATE_FILE]",
 		Short: "Unpause a GKE cluster",
 		Long: `Unpause a GKE cluster.
@@ -52,7 +52,7 @@ $ pause-gcp gke unpause gs://bucket/path/json_file.json --rm
 					return err
 				}
 			}
-			log.Printf("INFO: retrieve cluster state completed!\n")
+			log.Printf("INFO: retrieved cluster state!\n")
 			var cluster apis.Cluster
 			if err = protoutil.Unmarshal(b, &cluster); err != nil {
 				return err

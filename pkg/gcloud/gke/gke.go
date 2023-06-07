@@ -127,23 +127,6 @@ func GetCluster(project, location, name string) (*apis.Cluster, error) {
 }
 
 func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
-	resize := func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
-		_, err := exec.Run(exec.Command("gcloud",
-			"container",
-			"clusters",
-			"resize", cluster.Name,
-			"--project", cluster.Project,
-			"--location", cluster.Location,
-			"--node-pool", pool.Name,
-			"--num-nodes", "0",
-			"--quiet",
-		))
-		if err != nil {
-			return errors.Wrapf(err, "pause cluster: resize pool '%s/%s'", cluster.Name, pool.Name)
-		}
-		return nil
-	}
-
 	pause := func(cluster *apis.Cluster, pool *apis.Cluster_NodePool) error {
 		if pool.GetAutoscaling() != nil || pool.GetAutoscaling().GetEnabled() {
 			_, err := exec.Run(exec.Command("gcloud",
@@ -166,40 +149,10 @@ func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
 			return nil
 		}
 
-		ticker := time.NewTicker(time.Second)
-
-		// resize node pool isn't completed at the first time. After disable the autoscaling, GCP set the nodeCount is
-		// the initialNodeCount. Currently, we can't change the initialNodeCount setting.
-		if err := resize(cluster, pool); err != nil {
-			return err
+		if err := resize(cluster, pool.Name, 0, func(currentSize int) bool { return currentSize == 0 }); err != nil {
+			return errors.Wrap(err, "pause cluster")
 		}
-		// this will ensure that the nodeCount will be 0
-		for {
-			select {
-			case <-ticker.C:
-				if size := getNodePoolSize(cluster.Project, cluster.Name, pool.Name); size == 0 {
-					log.Printf("INFO: resized pool for '%s/%s' is completed!\n", cluster.Name, pool.Name)
-					return nil
-				} else {
-					log.Printf("INFO: current size of '%s/%s': %d\n", cluster.Name, pool.Name, size)
-				}
-				_, err := exec.Run(exec.Command("gcloud",
-					"container",
-					"clusters",
-					"resize", cluster.Name,
-					"--project", cluster.Project,
-					"--location", cluster.Location,
-					"--node-pool", pool.Name,
-					"--num-nodes", "0",
-					"--quiet",
-				))
-				if err != nil {
-					return errors.Wrapf(err, "pause cluster: resize pool '%s/%s'", cluster.Name, pool.Name)
-				}
-			case <-context.Background().Done():
-				return nil
-			}
-		}
+		return nil
 	}
 
 	var err error
@@ -222,6 +175,7 @@ func PauseCluster(cluster *apis.Cluster, dryRun bool) error {
 
 func UnpauseCluster(cluster *apis.Cluster) error {
 	unpause := func(cluster *apis.Cluster, p *apis.Cluster_NodePool) error {
+		// re-enable autoscaling if the setting is presented
 		if p.GetAutoscaling() != nil && p.GetAutoscaling().GetEnabled() {
 			_, err := exec.Run(exec.Command("gcloud",
 				"container",
@@ -240,21 +194,10 @@ func UnpauseCluster(cluster *apis.Cluster) error {
 			}
 			log.Printf("INFO: enabled autoscaling for '%s/%s'\n", cluster.Name, p.Name)
 		}
-
-		_, err := exec.Run(exec.Command("gcloud",
-			"container",
-			"clusters",
-			"resize", cluster.Name,
-			"--project", cluster.Project,
-			"--location", cluster.Location,
-			"--node-pool", p.GetName(),
-			"--num-nodes", strconv.Itoa(int(p.GetCurrentSize())),
-			"--quiet",
-		))
-		if err != nil {
-			return errors.Wrapf(err, "unpause cluster: resize pool '%s/%s'", cluster.Name, p.Name)
+		size := int(p.GetCurrentSize())
+		if err := resize(cluster, p.GetName(), size, func(currentSize int) bool { return currentSize >= size }); err != nil {
+			return errors.Wrap(err, "unpause cluster")
 		}
-		log.Printf("INFO: resized '%s/%s' to %d\n", cluster.Name, p.GetName(), p.GetCurrentSize())
 		return nil
 	}
 
@@ -353,6 +296,59 @@ func RefreshCluster(cluster *apis.Cluster, recreate bool) error {
 	return eg.Wait()
 }
 
+func resize(cluster *apis.Cluster, pool string, size int, sizeCondition func(currentSize int) bool) error {
+	ticker := time.NewTicker(time.Second)
+	// resize a node pool might take up to 4 hours
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
+	defer cancel()
+
+	for {
+		select {
+		case <-ticker.C:
+			if currentSize := getNodePoolSize(cluster.Project, cluster.Name, pool); sizeCondition(currentSize) {
+				log.Printf("INFO: resized pool for '%s/%s' is completed!\n", cluster.Name, pool)
+				return nil
+			} else {
+				log.Printf("INFO: current size of '%s/%s': %d\n", cluster.Name, pool, currentSize)
+			}
+
+			var op *Operation
+			var err error
+			if op, err = getOperation(cluster, pool, OperationFilter{Status: Running, OperationType: SetNodePoolSize}); err != nil {
+				log.Printf("WARN: get container operation got error: %v", err)
+			}
+
+			// if the cluster already in an operation, we must to need all operations complete
+			if op != nil {
+				log.Printf("INFO: cluster %q already in an operation. Tell the process to wait until the operation complete.\n", cluster.GetName())
+				_, err = exec.Run(exec.Command("gcloud", "container", "operations", "wait", op.Name, "--location", op.Zone, "--project", cluster.GetProject()))
+				if err != nil {
+					log.Printf("WARN: cluster %q: wait operation %q incomplete: error: %v\n", cluster.GetName(), op.Name, err)
+				}
+				// break the select; we will retry the whole process even the op success or not.
+				break
+			}
+
+			_, err = exec.Run(exec.Command("gcloud",
+				"container",
+				"clusters",
+				"resize", cluster.Name,
+				"--project", cluster.Project,
+				"--location", cluster.Location,
+				"--node-pool", pool,
+				"--num-nodes", strconv.Itoa(size),
+				"--quiet",
+				"--async",
+			))
+			if err != nil {
+				return errors.Wrapf(err, "pause cluster: resize pool '%s/%s'", cluster.Name, pool)
+			}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
 func getNodePoolSize(project, cluster, pool string) int {
 	out, err := exec.Run(exec.Command("gcloud",
 		"compute",
@@ -368,4 +364,34 @@ func getNodePoolSize(project, cluster, pool string) int {
 	}
 	val, _ := strconv.Atoi(out)
 	return val
+}
+
+func getOperation(cluster *apis.Cluster, pool string, filter OperationFilter) (*Operation, error) {
+	filterQuery := fmt.Sprintf("target_link:*/%s/nodePools/%s", cluster.GetName(), pool)
+	if filter.Status != "" {
+		filterQuery = fmt.Sprintf("%s AND status:%s", filterQuery, filter.Status)
+	}
+	if filter.OperationType != "" {
+		filterQuery = fmt.Sprintf("%s AND operation_type:%s", filterQuery, filter.OperationType)
+	}
+
+	raw, err := exec.Run(exec.Command("gcloud",
+		"container",
+		"operations",
+		"list",
+		"--filter", filterQuery,
+		"--project", cluster.GetProject(),
+		"--location", cluster.GetLocation(),
+		"--format", "json",
+	))
+	if err != nil {
+		return nil, errors.Wrapf(err, "get operation")
+	}
+
+	var ops []*Operation
+	_ = json.UnmarshalFromString(raw, &ops)
+	if len(ops) == 0 {
+		return nil, nil
+	}
+	return ops[0], nil
 }
