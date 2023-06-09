@@ -11,6 +11,10 @@ const (
 	Running = "RUNNING"
 )
 
+type Options struct {
+	Credentials string
+}
+
 type Operation struct {
 	Name          string `json:"name,omitempty"`
 	OperationType string `json:"operation_type,omitempty"`
