@@ -2,15 +2,16 @@ package pause
 
 import (
 	"fmt"
+	"log"
+	"os"
+	"strings"
+
 	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
 	"google.golang.org/protobuf/encoding/protojson"
-	"log"
-	"os"
-	"strings"
 )
 
 type runConfig struct {
@@ -22,7 +23,8 @@ type runConfig struct {
 }
 
 func run(cfg runConfig) error {
-	cluster, err := gke.GetCluster(cfg.project, cfg.location, cfg.clusterName)
+	gkeClient := gke.NewClient(gke.Options{})
+	cluster, err := gkeClient.GetCluster(cfg.project, cfg.location, cfg.clusterName)
 	if err != nil {
 		return err
 	}
@@ -38,7 +40,7 @@ func run(cfg runConfig) error {
 		}
 	}
 	cluster.NodePools = pools
-	if err = gke.PauseCluster(cluster, false); err != nil {
+	if err = gkeClient.PauseCluster(cluster); err != nil {
 		return err
 	}
 
@@ -54,8 +56,8 @@ func run(cfg runConfig) error {
 				return err
 			}
 		} else {
-			_ = os.MkdirAll(cfg.outputDir, 0755)
-			if err = os.WriteFile(dst, b, 0644); err != nil {
+			_ = os.MkdirAll(cfg.outputDir, 0o755)
+			if err = os.WriteFile(dst, b, 0o644); err != nil {
 				return err
 			}
 		}
