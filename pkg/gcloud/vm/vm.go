@@ -1,84 +1,120 @@
 package vm
 
 import (
-	"cloud.google.com/go/compute/apiv1/computepb"
-	"fmt"
-	"github.com/pkg/errors"
-	apis "github.com/vietanhduong/pause-gcp/apis/v1"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
+	"context"
 	"log"
 	"strings"
+
+	"github.com/googleapis/gax-go/v2/apierror"
+	"github.com/pkg/errors"
+	apis "github.com/vietanhduong/pause-gcp/apis/v1"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/grpc/codes"
 )
 
-func GetInstance(project, zone, name string) (*apis.Vm, error) {
-	raw, err := exec.Run(exec.Command("gcloud",
-		"compute",
-		"instances",
-		"describe", name,
-		"--project", project,
-		"--zone", zone,
-		"--format", "json"))
+type Client struct{}
+
+func NewClient() *Client { return &Client{} }
+
+func (c *Client) GetInstance(project, zone, name string) (*apis.Vm, error) {
+	svc, err := c.newComputeService()
 	if err != nil {
-		if strings.Contains(err.Error(), fmt.Sprintf("%s' was not found", name)) {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "get instance")
+		return nil, errors.Wrap(err, "get instance")
 	}
 
-	var instance computepb.Instance
-	if err = protoutil.Unmarshal([]byte(raw), &instance); err != nil {
+	instance, err := svc.Instances.Get(project, zone, name).Do()
+	if err != nil {
+		var apiErr *apierror.APIError
+		if errors.As(err, &apiErr) && apiErr.GRPCStatus().Code() == codes.NotFound {
+			return nil, nil
+		}
 		return nil, err
 	}
 
 	return &apis.Vm{
-		Name:    instance.GetName(),
-		Zone:    instance.GetZone(),
-		State:   instance.GetStatus(),
+		Name:    instance.Name,
+		Zone:    basename(instance.Zone),
+		State:   instance.Status,
 		Project: project,
 	}, nil
 }
 
-func StopInstance(vm *apis.Vm, terminate bool) error {
-	if vm.GetState() == "TERMINATED" || vm.GetState() == "SUSPENDED" {
-		log.Printf("INFO: instance %s already stopped", vm.GetName())
+func (c *Client) StopInstance(instance *apis.Vm, terminate bool) error {
+	if isStopping(instance.GetState()) {
+		log.Printf("INFO: instance %s already stopped", instance.GetName())
 		return nil
 	}
-	if vm.GetState() != "RUNNING" {
-		return errors.Errorf("instance is incorrect state (%s)", vm.GetState())
+
+	if !isRunning(instance.GetState()) {
+		return errors.Errorf("instance is incorrect state (%s)", instance.GetState())
 	}
 
-	cmd := "suspend"
-	if terminate {
-		cmd = "stop"
+	svc, err := c.newComputeService()
+	if err != nil {
+		return errors.Wrap(err, "stop instance")
 	}
-	_, err := exec.Run(exec.Command("gcloud",
-		"compute",
-		"instances",
-		cmd, vm.GetName(),
-		"--project", vm.GetProject(),
-		"--zone", vm.GetZone()))
-	return err
+
+	if terminate {
+		_, err = svc.Instances.Stop(instance.GetProject(), instance.GetZone(), instance.GetName()).Do()
+	} else {
+		_, err = svc.Instances.Suspend(instance.GetProject(), instance.GetZone(), instance.GetName()).Do()
+	}
+
+	if err != nil {
+		return errors.Wrap(err, "stop instance")
+	}
+	return nil
 }
 
-func StartInstance(vm *apis.Vm) error {
-	if vm.GetState() == "RUNNING" {
-		log.Printf("INFO: instance %s already started", vm.GetName())
+func (c *Client) StartInstance(instance *apis.Vm) error {
+	if isRunning(instance.GetState()) {
+		log.Printf("INFO: instance %s already started", instance.GetName())
 		return nil
 	}
-	if vm.GetState() != "TERMINATED" && vm.GetState() != "SUSPENDED" {
-		return errors.Errorf("instance is incorrect state (%s)", vm.GetState())
+	if !isStopping(instance.GetState()) {
+		return errors.Errorf("instance is incorrect state (%s)", instance.GetState())
 	}
 
-	var cmd = "start"
-	if vm.GetState() == "SUSPENDED" {
-		cmd = "resume"
+	svc, err := c.newComputeService()
+	if err != nil {
+		return errors.Wrap(err, "start instance")
 	}
-	_, err := exec.Run(exec.Command("gcloud",
-		"compute",
-		"instances",
-		cmd, vm.GetName(),
-		"--project", vm.GetProject(),
-		"--zone", vm.GetZone()))
-	return err
+
+	if instance.GetState() == "SUSPENDED" {
+		_, err = svc.Instances.Resume(instance.GetProject(), instance.GetZone(), instance.GetName()).Do()
+	} else {
+		_, err = svc.Instances.Start(instance.GetProject(), instance.GetZone(), instance.GetName()).Do()
+	}
+
+	if err != nil {
+		return errors.Wrap(err, "start instance")
+	}
+	return nil
+}
+
+func (c *Client) newComputeService() (*compute.Service, error) {
+	return compute.NewService(context.Background())
+}
+
+func basename(url string) string {
+	parts := strings.Split(url, "/")
+	return parts[len(parts)-1]
+}
+
+func isRunning(state string) bool {
+	switch state {
+	case "PROVISIONING", "RUNNING":
+		return true
+	default:
+		return false
+	}
+}
+
+func isStopping(state string) bool {
+	switch state {
+	case "STOPPED", "STOPPING", "SUSPENDED", "SUSPENDING", "TERMINATED":
+		return true
+	default:
+		return false
+	}
 }
