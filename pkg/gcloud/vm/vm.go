@@ -5,11 +5,10 @@ import (
 	"log"
 	"strings"
 
-	"github.com/googleapis/gax-go/v2/apierror"
 	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
 	"google.golang.org/api/compute/v1"
-	"google.golang.org/grpc/codes"
+	"google.golang.org/api/googleapi"
 )
 
 type Client struct{}
@@ -24,8 +23,8 @@ func (c *Client) GetInstance(project, zone, name string) (*apis.Vm, error) {
 
 	instance, err := svc.Instances.Get(project, zone, name).Do()
 	if err != nil {
-		var apiErr *apierror.APIError
-		if errors.As(err, &apiErr) && apiErr.GRPCStatus().Code() == codes.NotFound {
+		var apiErr *googleapi.Error
+		if errors.As(err, &apiErr) && apiErr.Code == 404 {
 			return nil, nil
 		}
 		return nil, err

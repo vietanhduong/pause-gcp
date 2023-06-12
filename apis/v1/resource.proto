@@ -47,7 +47,7 @@ message Sql {
   string project = 2;
   string region = 3;
   string gce_zone = 4;
-  string state = 5;
+  bool is_running = 5;
   string database_version = 6;
 }
 

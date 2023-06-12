@@ -1,66 +1,166 @@
 package sql
 
 import (
+	"context"
+	"log"
+	"time"
+
 	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
-	"log"
-	"strings"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/googleapi"
+	"google.golang.org/api/sqladmin/v1"
 )
 
-func GetInstance(project, name string) (*apis.Sql, error) {
-	raw, err := exec.Run(exec.Command("gcloud",
-		"sql",
-		"instances",
-		"describe", name,
-		"--project", project,
-		"--format", "json"))
+type Client struct{}
+
+func NewClient() *Client { return &Client{} }
+
+func (c *Client) GetInstance(project, name string) (*apis.Sql, error) {
+	svc, err := c.newSqlService()
 	if err != nil {
-		if strings.Contains(err.Error(), "The Cloud SQL instance does not exist") {
+		return nil, errors.Wrap(err, "get instance")
+	}
+	instance, err := svc.Instances.Get(project, name).Do()
+	if err != nil {
+		var apiErr *googleapi.Error
+		if errors.As(err, &apiErr) && apiErr.Code == 404 {
 			return nil, nil
 		}
-		return nil, errors.Wrapf(err, "get instance")
+		return nil, errors.Wrap(err, "get instance")
 	}
 
-	var instance apis.Sql
-	if err = protoutil.UnmarshalAllowUnknown([]byte(raw), &instance); err != nil {
-		return nil, err
-	}
-	return &instance, nil
+	return &apis.Sql{
+		Name:            instance.Name,
+		Project:         project,
+		GceZone:         instance.GceZone,
+		IsRunning:       instance.Settings.ActivationPolicy == "ALWAYS",
+		DatabaseVersion: instance.DatabaseVersion,
+		Region:          instance.Region,
+	}, nil
 }
 
-func StopInstance(instance *apis.Sql) error {
-	if instance.GetState() == "SUSPENDED" || instance.GetState() == "STOPPED" {
-		log.Printf("INFO: instance %s already stopped", instance.GetName())
-		return nil
-	}
-	if instance.GetState() != "RUNNABLE" {
-		return errors.Errorf("instance is incorrect state (%s)", instance.GetState())
+func (c *Client) StopInstance(instance *apis.Sql) error {
+	svc, err := c.newSqlService()
+	if err != nil {
+		return errors.Wrap(err, "stop instance")
 	}
 
-	_, err := exec.Run(exec.Command("gcloud",
-		"sql",
-		"instances",
-		"patch", instance.GetName(),
-		"--project", instance.GetProject(),
-		"--activation-policy", "NEVER"))
-	return err
+	if err = waitOperations(svc, instance); err != nil {
+		return errors.Wrap(err, "stop instance")
+	}
+
+	// retrieve the latest state of the input instance
+	var sql *apis.Sql
+	sql, err = c.GetInstance(instance.GetProject(), instance.GetName())
+	if err != nil {
+		return errors.Wrap(err, "stop instance")
+	}
+
+	if sql == nil {
+		return errors.Errorf("instance %q already be deleted", instance.GetName())
+	}
+
+	if !sql.IsRunning {
+		log.Printf("INFO: instance %s is stopping, no action needed", instance.GetName())
+		return nil
+	}
+
+	req := &sqladmin.DatabaseInstance{Settings: &sqladmin.Settings{ActivationPolicy: "NEVER"}}
+	_, err = svc.Instances.Patch(instance.GetProject(), instance.GetName(), req).Do()
+	if err != nil {
+		return errors.Wrap(err, "start instance")
+	}
+	return nil
 }
 
-func StartInstance(instance *apis.Sql) error {
-	if instance.GetState() == "RUNNABLE" {
-		log.Printf("INFO: instance %s already started", instance.GetName())
+func (c *Client) StartInstance(instance *apis.Sql) error {
+	svc, err := c.newSqlService()
+	if err != nil {
+		return errors.Wrap(err, "start instance")
+	}
+
+	if err = waitOperations(svc, instance); err != nil {
+		return errors.Wrap(err, "start instance")
+	}
+
+	// retrieve the latest state of the input instance
+	var sql *apis.Sql
+	sql, err = c.GetInstance(instance.GetProject(), instance.GetName())
+	if err != nil {
+		return errors.Wrap(err, "start instance")
+	}
+
+	if sql == nil {
+		return errors.Errorf("instance %q already be deleted", instance.GetName())
+	}
+
+	if sql.IsRunning {
+		log.Printf("INFO: instance %s is running, no action needed", instance.GetName())
 		return nil
 	}
-	if instance.GetState() != "STOPPED" && instance.GetState() != "SUSPENDED" {
-		return errors.Errorf("instance is incorrect state (%s)", instance.GetState())
+
+	req := &sqladmin.DatabaseInstance{Settings: &sqladmin.Settings{ActivationPolicy: "ALWAYS"}}
+	_, err = svc.Instances.Patch(instance.GetProject(), instance.GetName(), req).Do()
+	if err != nil {
+		return errors.Wrap(err, "start instance")
 	}
-	_, err := exec.Run(exec.Command("gcloud",
-		"sql",
-		"instances",
-		"patch", instance.GetName(),
-		"--project", instance.GetProject(),
-		"--activation-policy", "ALWAYS"))
-	return err
+	return nil
+}
+
+func (c *Client) newSqlService() (*sqladmin.Service, error) {
+	return sqladmin.NewService(context.Background())
+}
+
+func isRunning(state string) bool {
+	switch state {
+	case "PENDING_CREATE", "RUNNABLE":
+		return true
+	default:
+		return false
+	}
+}
+
+func waitOperations(svc *sqladmin.Service, instance *apis.Sql) error {
+	resp, err := svc.Operations.List(instance.GetProject()).Instance(instance.GetName()).Do()
+	if err != nil {
+		return errors.Wrap(err, "wait operations")
+	}
+	wait := func(op *sqladmin.Operation) error {
+		if op.Status == "DONE" {
+			return nil
+		}
+		ticker := time.NewTicker(1 * time.Second)
+		for {
+			select {
+			case <-ticker.C:
+				log.Printf("INFO: waiting operation %q...\n", instance.GetName())
+				tmp, err := svc.Operations.Get(instance.GetProject(), op.Name).Do()
+				if err != nil {
+					log.Printf("WARN: wait operation %q got error: %v\n", op.Name, err)
+					return err
+				}
+				if tmp.Status == "DONE" {
+					return nil
+				}
+			case <-context.Background().Done():
+				return nil
+			}
+		}
+	}
+	var eg errgroup.Group
+	for _, op := range resp.Items {
+		op := op
+		eg.Go(func() error { return wait(op) })
+	}
+	return eg.Wait()
+}
+
+func isStopping(state string) bool {
+	switch state {
+	case "STOPPED", "SUSPENDED", "PENDING_DELETE":
+		return true
+	default:
+		return false
+	}
 }

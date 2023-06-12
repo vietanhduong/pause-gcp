@@ -458,7 +458,7 @@ func (m *Sql) validate(all bool) error {
 
 	// no validation rules for GceZone
 
-	// no validation rules for State
+	// no validation rules for IsRunning
 
 	// no validation rules for DatabaseVersion
 
