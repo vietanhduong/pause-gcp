@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
+	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gcs"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/protoutil"
 )
@@ -42,11 +43,9 @@ $ pause-gcp gke unpause gs://bucket/path/json_file.json --rm
 			// if the input path starts with 'gs://', that means the state is stored at GCS
 			// and we can use gsutil cat to retrieve the file content
 			if strings.HasPrefix(strings.ToLower(args[0]), "gs://") {
-				var raw string
-				if raw, err = exec.Run(exec.Command("gsutil", "cat", args[0])); err != nil {
+				if b, err = gcs.NewClient().Cat(args[0]); err != nil {
 					return err
 				}
-				b = []byte(raw)
 			} else {
 				if b, err = os.ReadFile(args[0]); err != nil {
 					return err

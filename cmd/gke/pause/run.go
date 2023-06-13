@@ -8,8 +8,8 @@ import (
 
 	"github.com/pkg/errors"
 	apis "github.com/vietanhduong/pause-gcp/apis/v1"
+	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gcs"
 	"github.com/vietanhduong/pause-gcp/pkg/gcloud/gke"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 	"github.com/vietanhduong/pause-gcp/pkg/utils/sets"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -51,8 +51,7 @@ func run(cfg runConfig) error {
 	if cfg.outputDir != "" {
 		dst := fmt.Sprintf("%s/gke_%s_%s_%s.state.json", strings.TrimSuffix(cfg.outputDir, "/"), cfg.project, cfg.location, cfg.clusterName)
 		if strings.HasPrefix(strings.ToLower(cfg.outputDir), "gs://") {
-			_, err = exec.Run(exec.Command("bash", "-c", fmt.Sprintf(`echo '%s' | gsutil cp -L /dev/null - %s`, string(b), dst)))
-			if err != nil {
+			if err = gcs.NewClient().Upload(dst, b); err != nil {
 				return err
 			}
 		} else {
