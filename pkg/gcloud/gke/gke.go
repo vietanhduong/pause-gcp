@@ -367,7 +367,7 @@ func resize(conn *compute_v1.InstanceGroupManagersClient, cluster *apis.Cluster,
 		req := &computepb.ResizeInstanceGroupManagerRequest{
 			InstanceGroupManager: mig.GetName(),
 			Project:              cluster.GetProject(),
-			Size:                 int32(size),
+			Size:                 int32(size / len(migs)), // balance number of nodes of all MIGs
 			Zone:                 basename(mig.GetZone()),
 		}
 		_, err := conn.Resize(context.Background(), req)
