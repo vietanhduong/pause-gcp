@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -9,7 +8,6 @@ import (
 	"github.com/vietanhduong/pause-gcp/cmd/sql"
 	"github.com/vietanhduong/pause-gcp/cmd/version"
 	"github.com/vietanhduong/pause-gcp/cmd/vm"
-	"github.com/vietanhduong/pause-gcp/pkg/utils/exec"
 )
 
 func newRootCmd() *cobra.Command {
@@ -24,15 +22,7 @@ func newRootCmd() *cobra.Command {
 }
 
 func main() {
-	if err := testGcloud(); err != nil {
-		log.Fatalln(err)
-	}
 	if err := newRootCmd().Execute(); err != nil {
 		os.Exit(1)
 	}
-}
-
-func testGcloud() error {
-	_, err := exec.Run(exec.Command("which", "gcloud"))
-	return err
 }
